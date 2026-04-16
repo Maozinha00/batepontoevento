@@ -20,13 +20,7 @@ app.listen(3000);
 // 🔐 ENV (ARRUMADO)
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
-const GUILD_ID = "1477683902041690342"; // fixo como você pediu
-
-if (!TOKEN || !CLIENT_ID) {
-  console.log("❌ TOKEN ou CLIENT_ID faltando");
-  process.exit(1);
-}
-
+const GUILD_ID = "1477683902041690342";
 // 🏷️ CONFIG
 const STAFF_ROLE = "1195468742595985444";
 
