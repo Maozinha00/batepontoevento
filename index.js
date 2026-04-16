@@ -28,7 +28,7 @@ if (!TOKEN || !CLIENT_ID) {
 }
 
 // 🏷️ CONFIG
-const STAFF_ROLE = "1195468742595985438";
+const STAFF_ROLE = "1195468742595985443";
 
 // 🧠 BANCO
 const pontos = new Map();
