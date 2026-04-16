@@ -17,22 +17,24 @@ const app = express();
 app.get("/", (_, res) => res.send("Bot online 🔥"));
 app.listen(3000);
 
-// 🔐 ENV
-const { TOKEN, CLIENT_ID, GUILD_ID } = process.env;
+// 🔐 ENV (ARRUMADO)
+const TOKEN = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID = "1477683902041690342"; // fixo como você pediu
 
-if (!TOKEN || !CLIENT_ID || !GUILD_ID) {
-  console.log("❌ Configure TOKEN / CLIENT_ID / GUILD_ID");
+if (!TOKEN || !CLIENT_ID) {
+  console.log("❌ TOKEN ou CLIENT_ID faltando");
   process.exit(1);
 }
 
-// 🛡️ CONFIG
+// 🏷️ CONFIG
 const STAFF_ROLE = "1195468742595985444";
 
 // 🧠 DATABASE
 const db = new Map();
 let painel = { canal: null, msgId: null };
 
-// 👤 USER
+// 👤 USER DATA
 function getUser(id) {
   if (!db.has(id)) {
     db.set(id, {
@@ -52,7 +54,7 @@ function format(ms) {
   return `${h}h ${m}m`;
 }
 
-// 🧮 SCORE
+// 🧮 SCORE (ranking real competitivo)
 function score(u) {
   return u.tempo + (u.atendimentos * 300000) + (u.chamados * 180000);
 }
@@ -75,7 +77,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("rankinghp")
-    .setDescription("Ver ranking"),
+    .setDescription("Ver ranking geral"),
 
   new SlashCommandBuilder()
     .setName("resethp")
@@ -94,7 +96,7 @@ client.once("ready", async () => {
   setInterval(updatePanel, 10000);
 });
 
-// 🏥 PAINEL
+// 🏥 UPDATE PANEL
 async function updatePanel() {
   try {
     if (!painel.canal || !painel.msgId) return;
@@ -111,10 +113,10 @@ async function updatePanel() {
     }
 
     const top = [...db.entries()]
-      .sort((a,b)=> score(b[1]) - score(a[1]))
-      .slice(0,3)
-      .map(([id,d],i)=>`
-🏅 ${i+1}. <@${id}>
+      .sort((a, b) => score(b[1]) - score(a[1]))
+      .slice(0, 3)
+      .map(([id, d], i) => `
+🏅 ${i + 1}. <@${id}>
 ┆ ⏱️ ${format(d.tempo)}
 ┆ 🏥 ${d.atendimentos}
 ┆ 📞 ${d.chamados}
@@ -131,7 +133,7 @@ async function updatePanel() {
 ${lista || "┆ ❌ Nenhum médico"}
 
 ╭━━━━━━━━━━━━━━━━━━━━╮
-┃ 🏆 **TOP 3 GERAL**
+┃ 🏆 **TOP 3 COMPETITIVO**
 ╰━━━━━━━━━━━━━━━━━━━━╯
 ${top || "┆ ❌ Sem dados"}
 
@@ -141,7 +143,12 @@ ${top || "┆ ❌ Sem dados"}
 ┆ 🟢 Ativos: ${[...db.values()].filter(u=>u.inicio).length}
 ┆ ⏱️ Atualizado: <t:${Math.floor(Date.now()/1000)}:R>
 
-💉 Sistema Premium
+╭━━━━━━━━━━━━━━━━━━━━╮
+┃ 💉 **SISTEMA**
+╰━━━━━━━━━━━━━━━━━━━━╯
+┆ 🏥 RP: Bella
+┆ ⚙️ Modo: Competitivo
+┆ 🔥 Ranking: Ativo
 `)
       .setTimestamp();
 
@@ -155,10 +162,12 @@ ${top || "┆ ❌ Sem dados"}
 
     await msg.edit({ embeds: [embed], components: [row] });
 
-  } catch {}
+  } catch (e) {
+    console.log("Erro painel:", e);
+  }
 }
 
-// 🔐 STAFF CHECK
+// 🔐 STAFF
 function isStaff(member) {
   return member.roles.cache.has(STAFF_ROLE);
 }
@@ -166,7 +175,7 @@ function isStaff(member) {
 // 🎯 INTERAÇÕES
 client.on("interactionCreate", async (interaction) => {
 
-  // 📌 COMANDOS
+  // COMANDOS
   if (interaction.isChatInputCommand()) {
 
     const member = await interaction.guild.members.fetch(interaction.user.id);
@@ -189,7 +198,7 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.commandName === "rankinghp") {
       const lista = [...db.entries()]
         .sort((a,b)=> score(b[1]) - score(a[1]))
-        .map(([id,d],i)=>`${i+1}. <@${id}> • ${format(d.tempo)}`)
+        .map(([id,d],i)=>`${i+1}. <@${id}> • ${format(d.tempo)} | 🏥 ${d.atendimentos} | 📞 ${d.chamados}`)
         .join("\n");
 
       return interaction.reply({ content: lista || "Sem dados" });
@@ -197,11 +206,11 @@ client.on("interactionCreate", async (interaction) => {
 
     if (interaction.commandName === "resethp") {
       db.clear();
-      return interaction.reply({ content: "♻️ Sistema resetado!", ephemeral: true });
+      return interaction.reply({ content: "♻️ Resetado!", ephemeral: true });
     }
   }
 
-  // 🔘 BOTÕES
+  // BOTÕES
   if (interaction.isButton()) {
 
     const member = await interaction.guild.members.fetch(interaction.user.id);
@@ -212,21 +221,13 @@ client.on("interactionCreate", async (interaction) => {
 
     const user = getUser(interaction.user.id);
 
-    // INICIAR
     if (interaction.customId === "iniciar") {
-      if (user.inicio) {
-        return interaction.reply({ content: "⚠️ Já está em serviço", ephemeral: true });
-      }
-
       user.inicio = Date.now();
-      return interaction.reply({ content: "🟢 Turno iniciado", ephemeral: true });
+      return interaction.reply({ content: "🟢 Iniciado", ephemeral: true });
     }
 
-    // FINALIZAR
     if (interaction.customId === "finalizar") {
-      if (!user.inicio) {
-        return interaction.reply({ content: "❌ Não iniciou", ephemeral: true });
-      }
+      if (!user.inicio) return interaction.reply({ content: "❌ Não iniciou", ephemeral: true });
 
       const tempo = Date.now() - user.inicio;
       user.tempo += tempo;
@@ -235,19 +236,16 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.reply({ content: `🔴 ${format(tempo)}`, ephemeral: true });
     }
 
-    // ATENDIMENTO
     if (interaction.customId === "atendimento") {
       user.atendimentos++;
-      return interaction.reply({ content: "🏥 +1 atendimento", ephemeral: true });
+      return interaction.reply({ content: "🏥 Atendimento registrado", ephemeral: true });
     }
 
-    // CHAMADO
     if (interaction.customId === "chamado") {
       user.chamados++;
-      return interaction.reply({ content: "📞 +1 chamado", ephemeral: true });
+      return interaction.reply({ content: "📞 Chamado registrado", ephemeral: true });
     }
 
-    // RANKING
     if (interaction.customId === "ranking") {
       const lista = [...db.entries()]
         .sort((a,b)=> score(b[1]) - score(a[1]))
