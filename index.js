@@ -23,7 +23,7 @@ if (!TOKEN) throw new Error("TOKEN não definido");
 
 // 🏷️ IDS
 const GUILD_ID = "1477683902041690342";
-const STAFF_ROLE = "1490431614055088128";
+const STAFF_ROLE = "1195468742595985443";
 
 // 🧠 BANCO
 const db = new Map();
