@@ -39,17 +39,20 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
+client.on("error", console.error);
+process.on("unhandledRejection", console.error);
+
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
-// 📌 COMANDOS (CORRIGIDO)
+// 📌 COMANDOS
 const commands = [
   new SlashCommandBuilder()
     .setName("painelhp")
     .setDescription("Criar painel hospital")
     .addChannelOption(o =>
       o.setName("canal")
-       .setDescription("Canal do painel")
-       .setRequired(true)
+        .setDescription("Canal do painel")
+        .setRequired(true)
     ),
 
   new SlashCommandBuilder()
@@ -65,17 +68,17 @@ const commands = [
     .setDescription("Adicionar horas")
     .addUserOption(o =>
       o.setName("usuario")
-       .setDescription("Usuário")
-       .setRequired(true)
+        .setDescription("Usuário")
+        .setRequired(true)
     )
     .addIntegerOption(o =>
       o.setName("horas")
-       .setDescription("Horas")
-       .setRequired(true)
+        .setDescription("Horas")
+        .setRequired(true)
     )
     .addIntegerOption(o =>
       o.setName("minutos")
-       .setDescription("Minutos")
+        .setDescription("Minutos")
     ),
 
   new SlashCommandBuilder()
@@ -83,26 +86,25 @@ const commands = [
     .setDescription("Remover horas")
     .addUserOption(o =>
       o.setName("usuario")
-       .setDescription("Usuário")
-       .setRequired(true)
+        .setDescription("Usuário")
+        .setRequired(true)
     )
     .addIntegerOption(o =>
       o.setName("horas")
-       .setDescription("Horas")
-       .setRequired(true)
+        .setDescription("Horas")
+        .setRequired(true)
     )
     .addIntegerOption(o =>
       o.setName("minutos")
-       .setDescription("Minutos")
+        .setDescription("Minutos")
     )
 
 ].map(c => c.toJSON());
 
 // 🔥 READY
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`🔥 Online: ${client.user.tag}`);
 
-  // ⚠️ REGISTRO CERTO
   await rest.put(
     Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
     { body: commands }
@@ -131,7 +133,7 @@ function format(ms) {
   return `${h}h ${m}m`;
 }
 
-// 🏥 ATUALIZAR PAINEL
+// 🏥 PAINEL
 async function updatePanel() {
   if (!painel.canal || !painel.msgId) return;
 
@@ -152,12 +154,16 @@ async function updatePanel() {
   const embed = new EmbedBuilder()
     .setColor("#0f172a")
     .setDescription(`
-🏥 **HOSPITAL BELLA**
+🏥 **═══════〔 HOSPITAL BELLA 〕═══════**
 
 👨‍⚕️ EM SERVIÇO
-${lista || "Nenhum"}
+${lista || "Nenhum médico"}
+
+━━━━━━━━━━━━━━━━━━━━
 
 📊 Ativos: ${[...db.values()].filter(u=>u.inicio).length}
+
+💉 Sistema ativo
 `)
     .setTimestamp();
 
@@ -182,12 +188,11 @@ client.on("interactionCreate", async (interaction) => {
 
   if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
 
-  // 🔒 STAFF
+  // 🔒 COMANDOS
   if (interaction.isChatInputCommand() && !isStaff(interaction.member)) {
     return interaction.reply({ content: "❌ STAFF apenas", ephemeral: true });
   }
 
-  // 📌 COMANDOS
   if (interaction.isChatInputCommand()) {
 
     await interaction.deferReply({ ephemeral: true });
@@ -195,7 +200,17 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.commandName === "painelhp") {
       const canal = interaction.options.getChannel("canal");
 
-      const msg = await canal.send({ content: "Carregando painel..." });
+      if (!canal || !canal.isTextBased()) {
+        return interaction.editReply("❌ Canal inválido.");
+      }
+
+      const msg = await canal.send({
+        content: "🏥 Painel iniciado..."
+      }).catch(() => null);
+
+      if (!msg) {
+        return interaction.editReply("❌ Não consegui enviar no canal.");
+      }
 
       painel = { canal: canal.id, msgId: msg.id };
 
@@ -244,6 +259,13 @@ client.on("interactionCreate", async (interaction) => {
 
   // 🔘 BOTÕES
   if (interaction.isButton()) {
+
+    if (!isStaff(interaction.member)) {
+      return interaction.reply({
+        content: "❌ Apenas STAFF pode usar.",
+        ephemeral: true
+      });
+    }
 
     const user = getUser(interaction.user.id);
 
