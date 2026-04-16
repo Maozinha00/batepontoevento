@@ -20,7 +20,7 @@ app.listen(3000);
 // 🔐 ENV
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
-const GUILD_ID = "1477683902041690342";
+const GUILD_ID = "1195468742595985443";
 
 if (!TOKEN || !CLIENT_ID) throw new Error("TOKEN ou CLIENT_ID não definido");
 
@@ -31,7 +31,7 @@ const STAFF_ROLE = "1490431614055088128";
 
 // 👑 HIERARQUIA
 const HIERARQUIA = [
-  { cargo: "1477683902121509018", nome: "👑 Diretor(a)", peso: 4 },
+  { cargo: "1195468742595985443", nome: "👑 Diretor(a)", peso: 4 },
   { cargo: "1477683902121509017", nome: "🎖️ Vice-Diretor(a)", peso: 3 },
   { cargo: "1477683902121509016", nome: "🔱 Supervisor(a)", peso: 2 },
   { cargo: "1477683902121509015", nome: "🩺 Coordenador(a)", peso: 1 }
