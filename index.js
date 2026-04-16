@@ -50,9 +50,7 @@ const commands = [
     .setName("painelhp")
     .setDescription("Criar painel hospital")
     .addChannelOption(o =>
-      o.setName("canal")
-        .setDescription("Canal do painel")
-        .setRequired(true)
+      o.setName("canal").setDescription("Canal do painel").setRequired(true)
     ),
 
   new SlashCommandBuilder()
@@ -123,7 +121,16 @@ function format(ms) {
   return `${h}h ${m}m`;
 }
 
-// 🏥 PAINEL PREMIUM
+// 🧮 SCORE (TEMPO + AÇÕES)
+function calcularScore(user) {
+  return (
+    user.tempo +
+    (user.atendimentos * 300000) +
+    (user.chamados * 180000)
+  );
+}
+
+// 🏥 PAINEL
 async function updatePanel() {
   if (!painel.canal || !painel.msgId) return;
 
@@ -142,9 +149,14 @@ async function updatePanel() {
   }
 
   const top = [...db.entries()]
-    .sort((a,b)=> b[1].tempo - a[1].tempo)
+    .sort((a,b)=> calcularScore(b[1]) - calcularScore(a[1]))
     .slice(0,3)
-    .map(([id,d],i)=>`┆ ${i+1}. <@${id}> • ${format(d.tempo)}`)
+    .map(([id,d],i)=>`
+┆ ${i+1}. <@${id}>
+┆ ⏱️ ${format(d.tempo)}
+┆ 🏥 ${d.atendimentos} atend.
+┆ 📞 ${d.chamados} chamados
+`)
     .join("\n");
 
   const embed = new EmbedBuilder()
@@ -152,17 +164,8 @@ async function updatePanel() {
     .setDescription(`
 🏥 ═══════〔 **HOSPITAL BELLA** 〕═══════
 
-╭━━━━━━━━━━━━━━━━━━━━╮
-┃ 🏥 **Sistema Hospitalar Ativo**
-╰━━━━━━━━━━━━━━━━━━━━╯
-
-👑 **RESPONSÁVEL DO PLANTÃO**
-┆ ${[...db.values()].filter(u=>u.inicio).length > 0 ? "Equipe em serviço" : "Nenhum responsável disponível"}
-
-━━━━━━━━━━━━━━━━━━━━
-
-👨‍⚕️ **MÉDICOS EM SERVIÇO**
-${lista || "┆ ❌ Nenhum médico em serviço"}
+👨‍⚕️ **EM SERVIÇO**
+${lista || "┆ ❌ Nenhum médico"}
 
 ━━━━━━━━━━━━━━━━━━━━
 
@@ -171,18 +174,16 @@ ${top || "┆ ❌ Sem dados"}
 
 ━━━━━━━━━━━━━━━━━━━━
 
-📊 **STATUS DO SISTEMA**
+📊 **STATUS**
 ┆ 🟢 Ativos: ${[...db.values()].filter(u=>u.inicio).length}
 ┆ ⏱️ Atualizado: <t:${Math.floor(Date.now()/1000)}:R>
 
-━━━━━━━━━━━━━━━━━━━━
-
-💉 **Hospital Bella • Sistema Premium RP**
+💉 Sistema Premium
 `)
     .setTimestamp();
 
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("iniciar").setLabel("🟢 INICIAR TURNO").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId("iniciar").setLabel("🟢 INICIAR").setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId("finalizar").setLabel("🔴 FINALIZAR").setStyle(ButtonStyle.Danger),
     new ButtonBuilder().setCustomId("atendimento").setLabel("🏥 ATENDIMENTO").setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId("chamado").setLabel("📞 CHAMADO").setStyle(ButtonStyle.Secondary),
@@ -197,7 +198,7 @@ function isStaff(member) {
   return member?.roles?.cache?.has(STAFF_ROLE);
 }
 
-// 🎯 INTERAÇÕES
+// 🎯 INTERAÇÃO
 client.on("interactionCreate", async (interaction) => {
 
   if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
@@ -213,16 +214,10 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.commandName === "painelhp") {
       const canal = interaction.options.getChannel("canal");
 
-      if (!canal || !canal.isTextBased()) {
-        return interaction.editReply("❌ Canal inválido.");
-      }
-
       const msg = await canal.send({ content: "🏥 Painel iniciado..." }).catch(()=>null);
-
-      if (!msg) return interaction.editReply("❌ Não consegui enviar no canal.");
+      if (!msg) return interaction.editReply("❌ Erro ao enviar painel");
 
       painel = { canal: canal.id, msgId: msg.id };
-
       updatePanel();
 
       return interaction.editReply("✅ Painel criado!");
@@ -230,8 +225,13 @@ client.on("interactionCreate", async (interaction) => {
 
     if (interaction.commandName === "rankinghp") {
       const lista = [...db.entries()]
-        .sort((a,b)=> b[1].tempo - a[1].tempo)
-        .map(([id,d],i)=>`${i+1}. <@${id}> • ${format(d.tempo)}`)
+        .sort((a,b)=> calcularScore(b[1]) - calcularScore(a[1]))
+        .map(([id,d],i)=>`
+${i+1}. <@${id}>
+⏱️ ${format(d.tempo)}
+🏥 ${d.atendimentos}
+📞 ${d.chamados}
+`)
         .join("\n");
 
       return interaction.editReply(lista || "Sem dados");
@@ -268,14 +268,14 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.isButton()) {
 
     if (!isStaff(interaction.member)) {
-      return interaction.reply({ content: "❌ Apenas STAFF pode usar.", ephemeral: true });
+      return interaction.reply({ content: "❌ Apenas STAFF", ephemeral: true });
     }
 
     const user = getUser(interaction.user.id);
 
     if (interaction.customId === "iniciar") {
       user.inicio = Date.now();
-      return interaction.reply({ content: "🟢 Iniciado", ephemeral: true });
+      return interaction.reply({ content: "🟢 Turno iniciado", ephemeral: true });
     }
 
     if (interaction.customId === "finalizar") {
@@ -300,7 +300,7 @@ client.on("interactionCreate", async (interaction) => {
 
     if (interaction.customId === "ranking") {
       const lista = [...db.entries()]
-        .sort((a,b)=> b[1].tempo - a[1].tempo)
+        .sort((a,b)=> calcularScore(b[1]) - calcularScore(a[1]))
         .slice(0,10)
         .map(([id,d],i)=>`${i+1}. <@${id}> • ${format(d.tempo)}`)
         .join("\n");
@@ -310,5 +310,4 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// 🚀 LOGIN
 client.login(TOKEN);
