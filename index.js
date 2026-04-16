@@ -1,3 +1,5 @@
+import "dotenv/config";
+import express from "express";
 import {
   Client,
   GatewayIntentBits,
@@ -10,39 +12,86 @@ import {
   SlashCommandBuilder
 } from "discord.js";
 
-import express from "express";
-
 // 🌐 KEEP ALIVE
 const app = express();
-app.get("/", (_, res) => res.send("Bot online 🔥"));
+app.get("/", (_, res) => res.send("🏥 Hospital Bot Online"));
 app.listen(3000);
 
-// 🔐 ENV
+// 🔐 CONFIG
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
+
+// 🏰 SERVIDOR (SEU ID)
 const GUILD_ID = "1477683902041690342";
 
-if (!TOKEN || !CLIENT_ID) {
-  console.log("❌ TOKEN ou CLIENT_ID faltando");
+// 🛡️ STAFF ROLE (SEU CARGO)
+const STAFF_ROLE = "1195468742595985444";
+
+if (!TOKEN || !CLIENT_ID || !GUILD_ID) {
+  console.log("❌ Falta TOKEN / CLIENT_ID / GUILD_ID");
   process.exit(1);
 }
 
-// 🏷️ CONFIG
-const STAFF_ROLE = "1195468742595985444";
+// 🧠 SISTEMA
+let config = { painel: null, msgId: null };
 
-// 🧠 BANCO
-const pontos = new Map();
-const ranking = new Map();
-const dados = new Map();
+const pontos = new Map();            // plantão
+const chamados = new Map();          // pacientes
+const atendimentoAtivo = new Map();  // médico -> paciente
+const stats = new Map();             // ranking médicos
 
-let painel = { canal: null, msgId: null };
-
-// 🤖 CLIENT
+// 🚀 CLIENT
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
 const rest = new REST({ version: "10" }).setToken(TOKEN);
+
+// ⏱ FORMAT
+function format(ms) {
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  return `${h}h ${m}m`;
+}
+
+// 🏥 PAINEL
+function painel() {
+  return new EmbedBuilder()
+    .setColor("#0f172a")
+    .setTitle("🏥 HOSPITAL RP SYSTEM")
+    .setDescription(`
+🟢 Sistema ativo
+
+👨‍⚕️ Médicos em plantão: ${pontos.size}
+📞 Pacientes ativos: ${chamados.size}
+🩺 Atendimentos ativos: ${atendimentoAtivo.size}
+    `);
+}
+
+// 🔘 BOTÕES
+function row() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("iniciar")
+      .setLabel("🟢 Iniciar")
+      .setStyle(ButtonStyle.Success),
+
+    new ButtonBuilder()
+      .setCustomId("finalizar")
+      .setLabel("🔴 Finalizar")
+      .setStyle(ButtonStyle.Danger),
+
+    new ButtonBuilder()
+      .setCustomId("chamar")
+      .setLabel("📞 Chamar Médico")
+      .setStyle(ButtonStyle.Primary),
+
+    new ButtonBuilder()
+      .setCustomId("atender")
+      .setLabel("🩺 Atender")
+      .setStyle(ButtonStyle.Secondary)
+  );
+}
 
 // 📌 COMANDOS
 const commands = [
@@ -50,229 +99,192 @@ const commands = [
     .setName("painelhp")
     .setDescription("Criar painel hospital")
     .addChannelOption(o =>
-      o.setName("canal")
-        .setDescription("Canal onde será enviado o painel")
-        .setRequired(true)
+      o.setName("canal").setDescription("Canal do painel").setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName("rankinghp")
-    .setDescription("Ver ranking completo"),
-
-  new SlashCommandBuilder()
-    .setName("resetponto")
-    .setDescription("Resetar todos os dados")
+    .setDescription("TOP 3 médicos")
 ].map(c => c.toJSON());
 
 // 🔥 READY
 client.once("ready", async () => {
-  console.log(`🔥 Online: ${client.user.tag}`);
+  console.log(`🏥 Online como ${client.user.tag}`);
 
   await rest.put(
     Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
     { body: commands }
   );
 
-  setInterval(updatePanel, 30000);
+  setInterval(updatePanel, 15000);
 });
 
-// ⏱ FORMATAR
-function formatar(ms) {
-  const h = Math.floor(ms / 3600000);
-  const m = Math.floor((ms % 3600000) / 60000);
-  return `${h}h ${m}m`;
-}
-
-// 🧠 USER DATA
-function getUser(id) {
-  if (!dados.has(id)) {
-    dados.set(id, { atendimentos: 0, chamados: 0 });
-  }
-  return dados.get(id);
-}
-
-// 🧮 SCORE COMPETITIVO
-function getScore(id) {
-  const tempo = ranking.get(id) || 0;
-  const user = getUser(id);
-
-  return tempo + (user.atendimentos * 300000) + (user.chamados * 180000);
-}
-
-// 👑 RESPONSÁVEL
-function getBoss() {
-  let boss = null;
-  let best = 0;
-
-  for (const [id] of pontos) {
-    const score = getScore(id);
-    if (score > best) {
-      best = score;
-      boss = id;
-    }
-  }
-
-  return boss ? `<@${boss}>` : "Nenhum";
-}
-
-// 🏥 PAINEL
+// 🔄 UPDATE PAINEL
 async function updatePanel() {
-  if (!painel.canal) return;
+  try {
+    if (!config.painel || !config.msgId) return;
 
-  const channel = await client.channels.fetch(painel.canal).catch(() => null);
-  if (!channel) return;
+    const channel = await client.channels.fetch(config.painel);
+    const msg = await channel.messages.fetch(config.msgId);
 
-  const msg = await channel.messages.fetch(painel.msgId).catch(() => null);
-  if (!msg) return;
-
-  let lista = "";
-
-  for (const [id, data] of pontos) {
-    lista += `┆ 🟢 <@${id}> • ${formatar(Date.now() - data.inicio)}\n`;
-  }
-
-  const top = [...pontos.keys()]
-    .map(id => ({ id, score: getScore(id) }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3)
-    .map((u, i) => {
-      const d = getUser(u.id);
-      return `
-🏅 ${i + 1}. <@${u.id}>
-┆ 🧠 Score: ${u.score}
-┆ ⏱️ Tempo: ${formatar(ranking.get(u.id) || 0)}
-┆ 🏥 Atend: ${d.atendimentos}
-┆ 📞 Cham: ${d.chamados}
-`;
-    })
-    .join("\n");
-
-  const embed = new EmbedBuilder()
-    .setColor("#0f172a")
-    .setDescription(`╔══════════════════════════════╗
-🏥 **HOSPITAL BELLA**
-╚══════════════════════════════╝
-
-👑 **RESPONSÁVEL DO PLANTÃO**
-${getBoss()}
-
-👨‍⚕️ **EM SERVIÇO**
-${lista || "┆ ❌ Nenhum médico"}
-
-🏆 **TOP 3 COMPETITIVO**
-${top || "┆ ❌ Sem dados"}
-
-📊 **STATUS**
-┆ 🟢 Ativos: ${pontos.size}
-┆ ⏱️ Atualizado: <t:${Math.floor(Date.now() / 1000)}:R>
-
-💉 Sistema Premium RP`)
-    .setTimestamp();
-
-  const totalAtend = [...dados.values()].reduce((a, b) => a + b.atendimentos, 0);
-  const totalCham = [...dados.values()].reduce((a, b) => a + b.chamados, 0);
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("iniciar").setLabel("🟢 Iniciar").setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId("finalizar").setLabel("🔴 Finalizar").setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId("atendimento").setLabel(`🏥 Atendimento (${totalAtend})`).setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId("chamado").setLabel(`📞 Chamado (${totalCham})`).setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("ranking").setLabel("🏆 Ranking").setStyle(ButtonStyle.Success)
-  );
-
-  await msg.edit({ embeds: [embed], components: [row] });
-}
-
-// 🔐 STAFF CHECK
-function isStaff(member) {
-  return member?.roles?.cache?.has(STAFF_ROLE);
+    await msg.edit({
+      embeds: [painel()],
+      components: [row()]
+    });
+  } catch {}
 }
 
 // 🎯 INTERAÇÕES
 client.on("interactionCreate", async (interaction) => {
 
+  // COMMANDS
   if (interaction.isChatInputCommand()) {
 
-    if (!isStaff(interaction.member)) {
-      return interaction.reply({ content: "❌ STAFF apenas", ephemeral: true });
-    }
-
+    // PAINEL
     if (interaction.commandName === "painelhp") {
+
       const canal = interaction.options.getChannel("canal");
+      config.painel = canal.id;
 
-      const msg = await canal.send({ content: "🏥 Carregando painel..." });
+      const msg = await canal.send({
+        embeds: [painel()],
+        components: [row()]
+      });
 
-      painel = { canal: canal.id, msgId: msg.id };
+      config.msgId = msg.id;
 
-      updatePanel();
-
-      return interaction.reply({ content: "✅ Painel criado!", ephemeral: true });
+      return interaction.reply({
+        content: "✅ Painel criado!",
+        ephemeral: true
+      });
     }
 
+    // RANKING TOP 3
     if (interaction.commandName === "rankinghp") {
-      const lista = [...ranking.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .map(([id, t], i) => `${i + 1}. <@${id}> • ${formatar(t)}`)
-        .join("\n");
 
-      return interaction.reply({ content: lista || "Sem dados", ephemeral: true });
-    }
+      const sorted = [...stats.entries()]
+        .sort((a, b) => b[1].atendimentos - a[1].atendimentos);
 
-    if (interaction.commandName === "resetponto") {
-      pontos.clear();
-      ranking.clear();
-      dados.clear();
+      const top = (i) =>
+        sorted[i]
+          ? `<@${sorted[i][0]}> • 🩺 ${sorted[i][1].atendimentos} atendimentos`
+          : "Sem dados";
 
-      updatePanel();
+      return interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("🏆 TOP 3 MÉDICOS")
+            .setColor("Gold")
+            .setDescription(`
+🥇 TOP 1
+${top(0)}
 
-      return interaction.reply({ content: "✅ Resetado", ephemeral: true });
+🥈 TOP 2
+${top(1)}
+
+🥉 TOP 3
+${top(2)}
+
+────────────────
+🏥 Hospital RP System
+            `)
+        ]
+      });
     }
   }
 
-  if (interaction.isButton()) {
+  // BUTTONS
+  if (!interaction.isButton()) return;
 
-    if (!isStaff(interaction.member)) {
-      return interaction.reply({ content: "❌ STAFF apenas", ephemeral: true });
+  const id = interaction.user.id;
+  const member = interaction.member;
+
+  // 🛡️ PERMISSÃO STAFF (se quiser limitar depois)
+  const isStaff = member.roles.cache.has(STAFF_ROLE);
+
+  // 🟢 INICIAR
+  if (interaction.customId === "iniciar") {
+    pontos.set(id, { inicio: Date.now() });
+
+    return interaction.reply({
+      content: "🟢 Plantão iniciado!",
+      ephemeral: true
+    });
+  }
+
+  // 🔴 FINALIZAR
+  if (interaction.customId === "finalizar") {
+
+    const p = pontos.get(id);
+    if (!p) {
+      return interaction.reply({
+        content: "❌ Você não está em plantão",
+        ephemeral: true
+      });
     }
 
-    const id = interaction.user.id;
+    pontos.delete(id);
 
-    if (interaction.customId === "iniciar") {
-      pontos.set(id, { inicio: Date.now() });
-      return interaction.reply({ content: "🟢 Iniciado", ephemeral: true });
+    return interaction.reply({
+      content: `🔴 Finalizado: ${format(Date.now() - p.inicio)}`,
+      ephemeral: true
+    });
+  }
+
+  // 📞 CHAMAR
+  if (interaction.customId === "chamar") {
+
+    if (chamados.has(id)) {
+      return interaction.reply({
+        content: "❌ Você já tem chamado ativo",
+        ephemeral: true
+      });
     }
 
-    if (interaction.customId === "finalizar") {
-      const ponto = pontos.get(id);
-      if (!ponto) return interaction.reply({ content: "❌ Não iniciou", ephemeral: true });
+    chamados.set(id, true);
 
-      const tempo = Date.now() - ponto.inicio;
-      ranking.set(id, (ranking.get(id) || 0) + tempo);
-      pontos.delete(id);
+    return interaction.reply({
+      content: "📞 Médico chamado!",
+      ephemeral: true
+    });
+  }
 
-      return interaction.reply({ content: `🔴 ${formatar(tempo)}`, ephemeral: true });
+  // 🩺 ATENDER
+  if (interaction.customId === "atender") {
+
+    const medicoId = id;
+
+    if (atendimentoAtivo.has(medicoId)) {
+      return interaction.reply({
+        content: "❌ Já está atendendo alguém",
+        ephemeral: true
+      });
     }
 
-    if (interaction.customId === "atendimento") {
-      getUser(id).atendimentos++;
-      return interaction.reply({ content: "🏥 Atendimento registrado", ephemeral: true });
+    const paciente = [...chamados.keys()][0];
+
+    if (!paciente) {
+      return interaction.reply({
+        content: "❌ Nenhum chamado ativo",
+        ephemeral: true
+      });
     }
 
-    if (interaction.customId === "chamado") {
-      getUser(id).chamados++;
-      return interaction.reply({ content: "📞 Chamado registrado", ephemeral: true });
+    atendimentoAtivo.set(medicoId, paciente);
+    chamados.delete(paciente);
+
+    // 📊 STATS
+    if (!stats.has(medicoId)) {
+      stats.set(medicoId, { atendimentos: 0 });
     }
 
-    if (interaction.customId === "ranking") {
-      const lista = [...ranking.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .map(([id, t], i) => `${i + 1}. <@${id}> • ${formatar(t)}`)
-        .join("\n");
+    stats.get(medicoId).atendimentos++;
 
-      return interaction.reply({ content: lista || "Sem dados", ephemeral: true });
-    }
+    return interaction.reply({
+      content: `🩺 Atendendo <@${paciente}>`,
+      ephemeral: true
+    });
   }
 });
 
-// 🚀 LOGIN
 client.login(TOKEN);
