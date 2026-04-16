@@ -23,7 +23,7 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = "1477683902041690342";
 
 if (!TOKEN || !CLIENT_ID) {
-  console.log("❌ TOKEN / CLIENT_ID faltando");
+  console.log("❌ TOKEN ou CLIENT_ID faltando");
   process.exit(1);
 }
 
@@ -33,8 +33,15 @@ const STAFF_ROLE = "1195468742595985444";
 // 🧠 SISTEMA
 let config = { painel: null, msgId: null };
 
-const pontos = new Map(); // plantão
-const stats = new Map();  // médicos
+const stats = new Map();
+/*
+medicoId => {
+  inicio: timestamp,
+  horas: ms,
+  chamados: number,
+  tratamentos: number
+}
+*/
 
 // 🚀 CLIENT
 const client = new Client({
@@ -50,20 +57,13 @@ function format(ms) {
   return `${h}h ${m}m`;
 }
 
-// 📊 ADD TRATAMENTO
-function addTratamento(id) {
-  if (!stats.has(id)) {
-    stats.set(id, { tratamentos: 0 });
-  }
-  stats.get(id).tratamentos++;
-}
-
 // 🏥 PAINEL
 function painel() {
 
-  const medicos = [...pontos.entries()].map(([id, data]) => {
-    const tempo = Date.now() - data.inicio;
-    return `┆ 🟢 <@${id}> • ${format(tempo)}`;
+  const medicos = [...stats.entries()].map(([id, d]) => {
+    const ativo = d.inicio ? Date.now() - d.inicio : 0;
+    const total = (d.horas || 0) + ativo;
+    return `┆ 🟢 <@${id}> • ${format(total)}`;
   }).join("\n") || "┆ Nenhum médico em serviço";
 
   const sorted = [...stats.entries()]
@@ -71,8 +71,14 @@ function painel() {
 
   const top = (i) =>
     sorted[i]
-      ? `┆ ${i + 1}. <@${sorted[i][0]}> • ${sorted[i][1].tratamentos} tratamentos`
+      ? `┆ ${i + 1}. <@${sorted[i][0]}> • ${sorted[i][1].tratamentos} 💉`
       : `┆ ${i + 1}. Sem dados`;
+
+  const totalChamados = [...stats.values()]
+    .reduce((a, b) => a + (b.chamados || 0), 0);
+
+  const totalTratamentos = [...stats.values()]
+    .reduce((a, b) => a + (b.tratamentos || 0), 0);
 
   return new EmbedBuilder()
     .setColor("#0f172a")
@@ -101,8 +107,9 @@ ${top(2)}
 ━━━━━━━━━━━━━━━━━━━━
 
 📊 STATUS DO SISTEMA
-┆ 🟢 Ativos: ${pontos.size}
-┆ 💉 Tratamentos: ${[...stats.values()].reduce((a,b)=>a+b.tratamentos,0)}
+┆ 👥 Ativos: ${stats.size}
+┆ 📞 Chamados: ${totalChamados}
+┆ 💉 Tratamentos: ${totalTratamentos}
 
 ┆ ⏱️ Atualizado: <t:${Math.floor(Date.now()/1000)}:R>
 
@@ -123,7 +130,17 @@ function row() {
     new ButtonBuilder()
       .setCustomId("finalizar")
       .setLabel("🔴 Finalizar Plantão")
-      .setStyle(ButtonStyle.Danger)
+      .setStyle(ButtonStyle.Danger),
+
+    new ButtonBuilder()
+      .setCustomId("chamado")
+      .setLabel("📞 Chamado Aceito")
+      .setStyle(ButtonStyle.Primary),
+
+    new ButtonBuilder()
+      .setCustomId("tratamento")
+      .setLabel("💉 Tratamento")
+      .setStyle(ButtonStyle.Secondary)
   );
 }
 
@@ -138,7 +155,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("rankinghp")
-    .setDescription("Ver TOP 3 médicos")
+    .setDescription("TOP 3 médicos")
 ].map(c => c.toJSON());
 
 // 🔥 READY
@@ -171,6 +188,7 @@ async function updatePanel() {
 // 🎯 INTERAÇÕES
 client.on("interactionCreate", async (interaction) => {
 
+  // COMMANDS
   if (interaction.isChatInputCommand()) {
 
     // PAINEL
@@ -192,7 +210,7 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
-    // RANKING TOP 3
+    // RANKING
     if (interaction.commandName === "rankinghp") {
 
       const sorted = [...stats.entries()]
@@ -200,7 +218,7 @@ client.on("interactionCreate", async (interaction) => {
 
       const top = (i) =>
         sorted[i]
-          ? `#${i + 1} <@${sorted[i][0]}> • ${sorted[i][1].tratamentos} tratamentos`
+          ? `#${i + 1} <@${sorted[i][0]}> • ${sorted[i][1].tratamentos} 💉`
           : `#${i + 1} Sem dados`;
 
       return interaction.reply({
@@ -226,7 +244,12 @@ client.on("interactionCreate", async (interaction) => {
 
   // 🟢 INICIAR
   if (interaction.customId === "iniciar") {
-    pontos.set(id, { inicio: Date.now() });
+
+    if (!stats.has(id)) {
+      stats.set(id, { inicio: Date.now(), horas: 0, chamados: 0, tratamentos: 0 });
+    }
+
+    stats.get(id).inicio = Date.now();
 
     return interaction.reply({
       content: "🟢 Plantão iniciado!",
@@ -237,19 +260,50 @@ client.on("interactionCreate", async (interaction) => {
   // 🔴 FINALIZAR
   if (interaction.customId === "finalizar") {
 
-    const p = pontos.get(id);
-    if (!p) {
+    const data = stats.get(id);
+    if (!data || !data.inicio) {
       return interaction.reply({
         content: "❌ Você não está em plantão",
         ephemeral: true
       });
     }
 
-    pontos.delete(id);
-    addTratamento(id);
+    const tempo = Date.now() - data.inicio;
+    data.horas += tempo;
+    data.inicio = null;
 
     return interaction.reply({
-      content: `🔴 Finalizado: ${format(Date.now() - p.inicio)}`,
+      content: `🔴 Plantão finalizado: ${format(tempo)}`,
+      ephemeral: true
+    });
+  }
+
+  // 📞 CHAMADO ACEITO
+  if (interaction.customId === "chamado") {
+
+    if (!stats.has(id)) {
+      stats.set(id, { horas: 0, chamados: 0, tratamentos: 0 });
+    }
+
+    stats.get(id).chamados++;
+
+    return interaction.reply({
+      content: "📞 Chamado contabilizado!",
+      ephemeral: true
+    });
+  }
+
+  // 💉 TRATAMENTO
+  if (interaction.customId === "tratamento") {
+
+    if (!stats.has(id)) {
+      stats.set(id, { horas: 0, chamados: 0, tratamentos: 0 });
+    }
+
+    stats.get(id).tratamentos++;
+
+    return interaction.reply({
+      content: "💉 Tratamento contabilizado!",
       ephemeral: true
     });
   }
