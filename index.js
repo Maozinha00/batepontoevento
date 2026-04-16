@@ -17,30 +17,22 @@ const app = express();
 app.get("/", (_, res) => res.send("Bot online 🔥"));
 app.listen(3000);
 
-// 🔐 ENV
+// 🔐 TOKEN
 const TOKEN = process.env.TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID;
-const GUILD_ID = "1195468742595985438";
+if (!TOKEN) throw new Error("TOKEN não definido");
 
-if (!TOKEN || !CLIENT_ID) {
-  console.error("❌ TOKEN ou CLIENT_ID não definido");
-  process.exit(1);
-}
-
-// 🏷️ CONFIG
-const STAFF_ROLE = "1195468742595985444";
+// 🏷️ IDS
+const GUILD_ID = "1477683902041690342";
+const STAFF_ROLE = "1490431614055088128";
 
 // 🧠 BANCO
 const db = new Map();
 let painel = { canal: null, msgId: null };
 
-// 🤖 CLIENT
+// 🚀 CLIENT
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
-
-client.on("error", console.error);
-process.on("unhandledRejection", console.error);
 
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
@@ -50,9 +42,7 @@ const commands = [
     .setName("painelhp")
     .setDescription("Criar painel hospital")
     .addChannelOption(o =>
-      o.setName("canal")
-        .setDescription("Canal do painel")
-        .setRequired(true)
+      o.setName("canal").setDescription("Canal").setRequired(true)
     ),
 
   new SlashCommandBuilder()
@@ -62,14 +52,15 @@ const commands = [
   new SlashCommandBuilder()
     .setName("resetponto")
     .setDescription("Resetar sistema")
+
 ].map(c => c.toJSON());
 
 // 🔥 READY
-client.once("clientReady", async () => {
+client.once("ready", async () => {
   console.log(`🔥 Online: ${client.user.tag}`);
 
   await rest.put(
-    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    Routes.applicationGuildCommands(client.user.id, GUILD_ID),
     { body: commands }
   );
 
@@ -89,8 +80,8 @@ function getUser(id) {
   return db.get(id);
 }
 
-// ⏱ FORMATAR
-function format(ms) {
+// ⏱️ FORMATAR
+function formatar(ms) {
   const h = Math.floor(ms / 3600000);
   const m = Math.floor((ms % 3600000) / 60000);
   return `${h}h ${m}m`;
@@ -115,7 +106,7 @@ async function updatePanel() {
 
   for (const [id, data] of db) {
     if (data.inicio) {
-      lista += `👨‍⚕️ ┆ 🟢 <@${id}> • ${format(Date.now() - data.inicio)}\n`;
+      lista += `┆ 🟢 <@${id}> • ${formatar(Date.now() - data.inicio)}\n`;
     }
   }
 
@@ -124,34 +115,41 @@ async function updatePanel() {
     .slice(0,3)
     .map(([id,d],i)=>`
 🏅 ${i+1}. <@${id}>
-┆ ⏱️ ${format(d.tempo)}
+┆ ⏱️ ${formatar(d.tempo)}
 ┆ 🏥 ${d.atendimentos} atendimentos
 ┆ 📞 ${d.chamados} chamados
 `)
     .join("\n");
 
   const embed = new EmbedBuilder()
-    .setColor("#2b2d31")
+    .setColor("#0f172a")
     .setDescription(`
-🏥 **━━━━━━━━━━〔 HOSPITAL BELLA 〕━━━━━━━━━━**
+🏥 **═══════〔 HOSPITAL BELLA 〕═══════**
 
-👨‍⚕️ **EM SERVIÇO**
-${lista || "❌ Nenhum médico em serviço"}
+👑 **RESPONSÁVEL DO PLANTÃO**
+╭─ 🏥 Equipe ativa
+╰─ 👨‍⚕️ Profissionais em serviço
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━
+
+👨‍⚕️ **MÉDICOS EM SERVIÇO**
+${lista || "┆ ❌ Nenhum médico em serviço"}
+
+━━━━━━━━━━━━━━━━━━━━
 
 🏆 **TOP 3 DO PLANTÃO**
-${top || "❌ Sem dados"}
+${top || "┆ ❌ Sem dados"}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━
 
-📊 **STATUS**
-🟢 Ativos: ${[...db.values()].filter(u=>u.inicio).length}
-⏱️ Atualizado: <t:${Math.floor(Date.now()/1000)}:R>
+📊 **STATUS DO SISTEMA**
+┆ 🟢 Ativos: ${[...db.values()].filter(u=>u.inicio).length}
+┆ ⏱️ Atualizado: <t:${Math.floor(Date.now()/1000)}:R>
 
-💉 Sistema Premium RP
+━━━━━━━━━━━━━━━━━━━━
+
+💉 **Hospital Bella • Sistema Premium RP**
 `)
-    .setFooter({ text: "Hospital Bella • Sistema Inteligente" })
     .setTimestamp();
 
   const row = new ActionRowBuilder().addComponents(
@@ -170,7 +168,7 @@ function isStaff(member) {
   return member?.roles?.cache?.has(STAFF_ROLE);
 }
 
-// 🎯 INTERAÇÃO
+// 🎯 INTERAÇÕES
 client.on("interactionCreate", async (interaction) => {
 
   if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
@@ -186,12 +184,8 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.commandName === "painelhp") {
       const canal = interaction.options.getChannel("canal");
 
-      if (!canal || !canal.isTextBased()) {
-        return interaction.editReply("❌ Canal inválido");
-      }
-
       const msg = await canal.send({ content: "🏥 Carregando painel..." }).catch(()=>null);
-      if (!msg) return interaction.editReply("❌ Erro ao enviar painel");
+      if (!msg) return interaction.editReply("Erro");
 
       painel = { canal: canal.id, msgId: msg.id };
       updatePanel();
@@ -202,12 +196,7 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.commandName === "rankinghp") {
       const lista = [...db.entries()]
         .sort((a,b)=> score(b[1]) - score(a[1]))
-        .map(([id,d],i)=>`
-${i+1}. <@${id}>
-⏱️ ${format(d.tempo)}
-🏥 ${d.atendimentos}
-📞 ${d.chamados}
-`)
+        .map(([id,d],i)=>`${i+1}. <@${id}> • ${formatar(d.tempo)}`)
         .join("\n");
 
       return interaction.editReply(lista || "Sem dados");
@@ -240,7 +229,7 @@ ${i+1}. <@${id}>
       user.tempo += tempo;
       user.inicio = null;
 
-      return interaction.reply({ content: `🔴 ${format(tempo)}`, ephemeral: true });
+      return interaction.reply({ content: `🔴 ${formatar(tempo)}`, ephemeral: true });
     }
 
     if (interaction.customId === "atendimento") {
@@ -257,7 +246,7 @@ ${i+1}. <@${id}>
       const lista = [...db.entries()]
         .sort((a,b)=> score(b[1]) - score(a[1]))
         .slice(0,10)
-        .map(([id,d],i)=>`${i+1}. <@${id}> • ${format(d.tempo)}`)
+        .map(([id,d],i)=>`${i+1}. <@${id}> • ${formatar(d.tempo)}`)
         .join("\n");
 
       return interaction.reply({ content: lista || "Sem dados", ephemeral: true });
@@ -265,5 +254,4 @@ ${i+1}. <@${id}>
   }
 });
 
-// 🚀 LOGIN
 client.login(TOKEN);
