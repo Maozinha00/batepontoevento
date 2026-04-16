@@ -17,19 +17,24 @@ const app = express();
 app.get("/", (_, res) => res.send("Bot online 🔥"));
 app.listen(3000);
 
-// 🔐 TOKEN
+// 🔐 ENV
 const TOKEN = process.env.TOKEN;
-if (!TOKEN) throw new Error("TOKEN não definido");
-
-// 🏷️ IDS
+const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = "1477683902041690342";
-const STAFF_ROLE = "1195468742595985443";
+
+if (!TOKEN || !CLIENT_ID) {
+  console.error("❌ TOKEN ou CLIENT_ID não definido");
+  process.exit(1);
+}
+
+// 🏷️ CONFIG
+const STAFF_ROLE = "1490431614055088128";
 
 // 🧠 BANCO
 const db = new Map();
 let painel = { canal: null, msgId: null };
 
-// 🚀 CLIENT
+// 🤖 CLIENT
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
@@ -47,11 +52,25 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("rankinghp")
-    .setDescription("Ver ranking"),
+    .setDescription("Ver ranking geral"),
 
   new SlashCommandBuilder()
     .setName("resetponto")
-    .setDescription("Resetar sistema")
+    .setDescription("Resetar sistema"),
+
+  new SlashCommandBuilder()
+    .setName("addhora")
+    .setDescription("Adicionar horas")
+    .addUserOption(o => o.setName("usuario").setRequired(true))
+    .addIntegerOption(o => o.setName("horas").setRequired(true))
+    .addIntegerOption(o => o.setName("minutos")),
+
+  new SlashCommandBuilder()
+    .setName("removerhora")
+    .setDescription("Remover horas")
+    .addUserOption(o => o.setName("usuario").setRequired(true))
+    .addIntegerOption(o => o.setName("horas").setRequired(true))
+    .addIntegerOption(o => o.setName("minutos"))
 
 ].map(c => c.toJSON());
 
@@ -60,7 +79,7 @@ client.once("ready", async () => {
   console.log(`🔥 Online: ${client.user.tag}`);
 
   await rest.put(
-    Routes.applicationGuildCommands(client.user.id, GUILD_ID),
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
     { body: commands }
   );
 
@@ -80,7 +99,7 @@ function getUser(id) {
   return db.get(id);
 }
 
-// ⏱️ FORMATAR
+// ⏱ FORMATAR
 function formatar(ms) {
   const h = Math.floor(ms / 3600000);
   const m = Math.floor((ms % 3600000) / 60000);
@@ -124,31 +143,34 @@ async function updatePanel() {
   const embed = new EmbedBuilder()
     .setColor("#0f172a")
     .setDescription(`
-🏥 **═══════〔 HOSPITAL BELLA 〕═══════**
+╔══════════════════════════════╗
+        🏥 **HOSPITAL BELLA**
+╚══════════════════════════════╝
 
-👑 **RESPONSÁVEL DO PLANTÃO**
-╭─ 🏥 Equipe ativa
-╰─ 👨‍⚕️ Profissionais em serviço
-
-━━━━━━━━━━━━━━━━━━━━
-
-👨‍⚕️ **MÉDICOS EM SERVIÇO**
+╭━━━━━━━━━━━━━━━━━━━━╮
+┃ 👨‍⚕️ **EM SERVIÇO**
+╰━━━━━━━━━━━━━━━━━━━━╯
 ${lista || "┆ ❌ Nenhum médico em serviço"}
 
-━━━━━━━━━━━━━━━━━━━━
-
-🏆 **TOP 3 DO PLANTÃO**
+╭━━━━━━━━━━━━━━━━━━━━╮
+┃ 🏆 **TOP 3 DO PLANTÃO**
+╰━━━━━━━━━━━━━━━━━━━━╯
 ${top || "┆ ❌ Sem dados"}
 
-━━━━━━━━━━━━━━━━━━━━
-
-📊 **STATUS DO SISTEMA**
+╭━━━━━━━━━━━━━━━━━━━━╮
+┃ 📊 **STATUS DO SISTEMA**
+╰━━━━━━━━━━━━━━━━━━━━╯
 ┆ 🟢 Ativos: ${[...db.values()].filter(u=>u.inicio).length}
 ┆ ⏱️ Atualizado: <t:${Math.floor(Date.now()/1000)}:R>
 
-━━━━━━━━━━━━━━━━━━━━
+╭━━━━━━━━━━━━━━━━━━━━╮
+┃ 💉 **SISTEMA HOSPITALAR**
+╰━━━━━━━━━━━━━━━━━━━━╯
+┆ 🔥 Versão: Premium
+┆ ⚙️ Operação: Online
+┆ 🏥 Cidade RP: Bella
 
-💉 **Hospital Bella • Sistema Premium RP**
+╚══════════════════════════════╝
 `)
     .setTimestamp();
 
@@ -168,7 +190,7 @@ function isStaff(member) {
   return member?.roles?.cache?.has(STAFF_ROLE);
 }
 
-// 🎯 INTERAÇÕES
+// 🎯 INTERAÇÃO
 client.on("interactionCreate", async (interaction) => {
 
   if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
@@ -207,6 +229,30 @@ client.on("interactionCreate", async (interaction) => {
       updatePanel();
       return interaction.editReply("✅ Resetado");
     }
+
+    if (interaction.commandName === "addhora") {
+      const u = interaction.options.getUser("usuario");
+      const h = interaction.options.getInteger("horas");
+      const m = interaction.options.getInteger("minutos") || 0;
+
+      getUser(u.id).tempo += (h * 60 + m) * 60000;
+      updatePanel();
+
+      return interaction.editReply("✅ Adicionado");
+    }
+
+    if (interaction.commandName === "removerhora") {
+      const u = interaction.options.getUser("usuario");
+      const h = interaction.options.getInteger("horas");
+      const m = interaction.options.getInteger("minutos") || 0;
+
+      const user = getUser(u.id);
+      user.tempo = Math.max(0, user.tempo - (h * 60 + m) * 60000);
+
+      updatePanel();
+
+      return interaction.editReply("❌ Removido");
+    }
   }
 
   if (interaction.isButton()) {
@@ -219,27 +265,32 @@ client.on("interactionCreate", async (interaction) => {
 
     if (interaction.customId === "iniciar") {
       user.inicio = Date.now();
-      return interaction.reply({ content: "🟢 Turno iniciado", ephemeral: true });
+      await interaction.reply({ content: "🟢 Turno iniciado", ephemeral: true });
+      updatePanel();
     }
 
     if (interaction.customId === "finalizar") {
-      if (!user.inicio) return interaction.reply({ content: "❌ Não iniciou", ephemeral: true });
+      if (!user.inicio)
+        return interaction.reply({ content: "❌ Não iniciou", ephemeral: true });
 
       const tempo = Date.now() - user.inicio;
       user.tempo += tempo;
       user.inicio = null;
 
-      return interaction.reply({ content: `🔴 ${formatar(tempo)}`, ephemeral: true });
+      await interaction.reply({ content: `🔴 ${formatar(tempo)}`, ephemeral: true });
+      updatePanel();
     }
 
     if (interaction.customId === "atendimento") {
       user.atendimentos++;
-      return interaction.reply({ content: "🏥 Atendimento registrado", ephemeral: true });
+      await interaction.reply({ content: "🏥 Atendimento registrado", ephemeral: true });
+      updatePanel();
     }
 
     if (interaction.customId === "chamado") {
       user.chamados++;
-      return interaction.reply({ content: "📞 Chamado registrado", ephemeral: true });
+      await interaction.reply({ content: "📞 Chamado registrado", ephemeral: true });
+      updatePanel();
     }
 
     if (interaction.customId === "ranking") {
