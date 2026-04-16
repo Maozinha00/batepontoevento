@@ -20,7 +20,7 @@ app.listen(3000);
 // 🔐 ENV
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
-const GUILD_ID = "1195468742595985443";
+const GUILD_ID = "1477683902041690342";
 
 if (!TOKEN || !CLIENT_ID) throw new Error("TOKEN ou CLIENT_ID não definido");
 
