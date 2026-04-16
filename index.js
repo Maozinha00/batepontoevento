@@ -1,4 +1,6 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config();
+
 import express from "express";
 import {
   Client,
@@ -17,27 +19,23 @@ const app = express();
 app.get("/", (_, res) => res.send("🏥 Hospital RP Online"));
 app.listen(3000);
 
-// 🔐 CONFIG
+// 🔐 CONFIG (COM PROTEÇÃO)
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = "1477683902041690342";
 
 if (!TOKEN || !CLIENT_ID) {
-  console.log("❌ TOKEN ou CLIENT_ID faltando");
-  process.exit(1);
+  console.log("❌ FALTANDO TOKEN OU CLIENT_ID NO AMBIENTE");
+  console.log("👉 Verifica .env ou Variables do Railway");
+  // NÃO FECHA O BOT (evita crash)
 }
 
 // 🧠 SISTEMA
-let config = {
-  painel: null,
-  msgId: null
-};
+let config = { painel: null, msgId: null };
 
-// 📊 DADOS
 const stats = new Map();
-// id => { inicio: null | timestamp, horas: number, chamados: number, tratamentos: number }
 
-// ⏱ FORMATAR TEMPO
+// ⏱ FORMAT
 function format(ms) {
   const h = Math.floor(ms / 3600000);
   const m = Math.floor((ms % 3600000) / 60000);
@@ -81,84 +79,68 @@ function painel() {
 👨‍⚕️ MÉDICOS EM SERVIÇO
 ${medicosAtivos}
 
-🏆 TOP 3 DO PLANTÃO
+🏆 TOP 3
 ${top(0)}
 ${top(1)}
 ${top(2)}
 
-📊 STATUS DO SISTEMA
-┆ 👥 Médicos cadastrados: ${stats.size}
+📊 STATUS
+┆ 👥 Total: ${stats.size}
 ┆ 🟢 Em serviço: ${medicosEmServico}
 ┆ 📞 Chamados: ${totalChamados}
 ┆ 💉 Tratamentos: ${totalTratamentos}
 
-⏱️ Atualizado: <t:${Math.floor(Date.now() / 1000)}:R>
-
-💉 Hospital Bella • Sistema Premium RP
+⏱️ Atualizado agora
 `);
 }
 
 // 🔘 BOTÕES
 function row() {
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("iniciar")
-      .setLabel("🟢 Iniciar Plantão")
-      .setStyle(ButtonStyle.Success),
-
-    new ButtonBuilder()
-      .setCustomId("finalizar")
-      .setLabel("🔴 Finalizar Plantão")
-      .setStyle(ButtonStyle.Danger),
-
-    new ButtonBuilder()
-      .setCustomId("chamado")
-      .setLabel("📞 Chamado Aceito")
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId("tratamento")
-      .setLabel("💉 Tratamento")
-      .setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId("iniciar").setLabel("🟢 Iniciar").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId("finalizar").setLabel("🔴 Finalizar").setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId("chamado").setLabel("📞 Chamado").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId("tratamento").setLabel("💉 Tratamento").setStyle(ButtonStyle.Secondary)
   );
 }
-
-// 📌 SLASH COMMANDS
-const commands = [
-  new SlashCommandBuilder()
-    .setName("painelhp")
-    .setDescription("Criar painel hospital")
-    .addChannelOption(o =>
-      o.setName("canal")
-        .setDescription("Canal do painel")
-        .setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("rankinghp")
-    .setDescription("TOP 3 médicos")
-].map(c => c.toJSON());
 
 // 🚀 CLIENT
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-const rest = new REST({ version: 10 }).setToken(TOKEN);
+const rest = new REST({ version: 10 }).setToken(TOKEN || "");
 
 // 🔥 READY
-client.once("ready", async () => {
-  console.log(`🏥 Online como ${client.user.tag}`);
+client.once("clientReady", async () => {
+
+  if (client.user) {
+    console.log(`🏥 ONLINE COMO ${client.user.tag}`);
+  }
+
+  if (!TOKEN || !CLIENT_ID) return;
 
   await rest.put(
     Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-    { body: commands }
+    {
+      body: [
+        new SlashCommandBuilder()
+          .setName("painelhp")
+          .setDescription("Criar painel hospital")
+          .addChannelOption(o =>
+            o.setName("canal").setRequired(true)
+          ),
+        new SlashCommandBuilder()
+          .setName("rankinghp")
+          .setDescription("TOP médicos")
+      ].map(c => c.toJSON())
+    }
   );
 
   setInterval(updatePanel, 15000);
 });
 
-// 🔄 UPDATE PAINEL
+// 🔄 UPDATE
 async function updatePanel() {
   try {
     if (!config.painel || !config.msgId) return;
@@ -170,18 +152,15 @@ async function updatePanel() {
       embeds: [painel()],
       components: [row()]
     });
-  } catch (err) {
-    // silencioso pra evitar crash
-  }
+
+  } catch {}
 }
 
 // 🎯 INTERAÇÕES
 client.on("interactionCreate", async (interaction) => {
 
-  // 📌 SLASH
   if (interaction.isChatInputCommand()) {
 
-    // 🏥 PAINEL
     if (interaction.commandName === "painelhp") {
       const canal = interaction.options.getChannel("canal");
       config.painel = canal.id;
@@ -193,13 +172,9 @@ client.on("interactionCreate", async (interaction) => {
 
       config.msgId = msg.id;
 
-      return interaction.reply({
-        content: "✅ Painel criado com sucesso!",
-        ephemeral: true
-      });
+      return interaction.reply({ content: "✅ Painel criado!", ephemeral: true });
     }
 
-    // 🏆 RANKING
     if (interaction.commandName === "rankinghp") {
 
       const sorted = [...stats.entries()]
@@ -207,19 +182,15 @@ client.on("interactionCreate", async (interaction) => {
 
       const top = (i) =>
         sorted[i]
-          ? `#${i + 1} <@${sorted[i][0]}> • ${sorted[i][1].tratamentos} 💉`
+          ? `#${i + 1} <@${sorted[i][0]}> • ${sorted[i][1].tratamentos}`
           : `#${i + 1} Sem dados`;
 
       return interaction.reply({
         embeds: [
           new EmbedBuilder()
-            .setTitle("🏆 TOP 3 MÉDICOS")
+            .setTitle("🏆 TOP MÉDICOS")
             .setColor("Gold")
-            .setDescription(`
-🥇 ${top(0)}
-🥈 ${top(1)}
-🥉 ${top(2)}
-            `)
+            .setDescription(`${top(0)}\n${top(1)}\n${top(2)}`)
         ]
       });
     }
@@ -229,88 +200,41 @@ client.on("interactionCreate", async (interaction) => {
 
   const id = interaction.user.id;
 
-  // 🟢 INICIAR
-  if (interaction.customId === "iniciar") {
-
-    if (!stats.has(id)) {
-      stats.set(id, {
-        inicio: null,
-        horas: 0,
-        chamados: 0,
-        tratamentos: 0
-      });
-    }
-
-    const data = stats.get(id);
-    data.inicio = Date.now();
-
-    return interaction.reply({
-      content: "🟢 Plantão iniciado!",
-      ephemeral: true
-    });
+  if (!stats.has(id)) {
+    stats.set(id, { inicio: null, horas: 0, chamados: 0, tratamentos: 0 });
   }
 
-  // 🔴 FINALIZAR
+  const data = stats.get(id);
+
+  if (interaction.customId === "iniciar") {
+    data.inicio = Date.now();
+    return interaction.reply({ content: "🟢 Iniciado!", ephemeral: true });
+  }
+
   if (interaction.customId === "finalizar") {
-
-    const data = stats.get(id);
-
-    if (!data || !data.inicio) {
-      return interaction.reply({
-        content: "❌ Você não está em plantão!",
-        ephemeral: true
-      });
-    }
+    if (!data.inicio) return interaction.reply({ content: "❌ não está em serviço", ephemeral: true });
 
     const tempo = Date.now() - data.inicio;
     data.horas += tempo;
     data.inicio = null;
 
-    return interaction.reply({
-      content: `🔴 Plantão finalizado: ${format(tempo)}`,
-      ephemeral: true
-    });
+    return interaction.reply({ content: `🔴 Finalizado ${format(tempo)}`, ephemeral: true });
   }
 
-  // 📞 CHAMADO
   if (interaction.customId === "chamado") {
-
-    const data = stats.get(id);
-
-    if (!data || !data.inicio) {
-      return interaction.reply({
-        content: "❌ Você precisa estar em plantão!",
-        ephemeral: true
-      });
-    }
+    if (!data.inicio) return interaction.reply({ content: "❌ precisa estar em serviço", ephemeral: true });
 
     data.chamados++;
-
-    return interaction.reply({
-      content: "📞 Chamado contabilizado!",
-      ephemeral: true
-    });
+    return interaction.reply({ content: "📞 contado", ephemeral: true });
   }
 
-  // 💉 TRATAMENTO
   if (interaction.customId === "tratamento") {
-
-    const data = stats.get(id);
-
-    if (!data || !data.inicio) {
-      return interaction.reply({
-        content: "❌ Você precisa estar em plantão!",
-        ephemeral: true
-      });
-    }
+    if (!data.inicio) return interaction.reply({ content: "❌ precisa estar em serviço", ephemeral: true });
 
     data.tratamentos++;
-
-    return interaction.reply({
-      content: "💉 Tratamento contabilizado!",
-      ephemeral: true
-    });
+    return interaction.reply({ content: "💉 contado", ephemeral: true });
   }
 });
 
-client.login(TOKEN);
+// 🚀 LOGIN
+client.login(TOKEN || "");
