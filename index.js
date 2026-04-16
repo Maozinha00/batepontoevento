@@ -59,34 +59,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("resetponto")
-    .setDescription("Resetar sistema"),
-
-  new SlashCommandBuilder()
-    .setName("addhora")
-    .setDescription("Adicionar horas")
-    .addUserOption(o =>
-      o.setName("usuario").setDescription("Usuário").setRequired(true)
-    )
-    .addIntegerOption(o =>
-      o.setName("horas").setDescription("Horas").setRequired(true)
-    )
-    .addIntegerOption(o =>
-      o.setName("minutos").setDescription("Minutos")
-    ),
-
-  new SlashCommandBuilder()
-    .setName("removerhora")
-    .setDescription("Remover horas")
-    .addUserOption(o =>
-      o.setName("usuario").setDescription("Usuário").setRequired(true)
-    )
-    .addIntegerOption(o =>
-      o.setName("horas").setDescription("Horas").setRequired(true)
-    )
-    .addIntegerOption(o =>
-      o.setName("minutos").setDescription("Minutos")
-    )
-
+    .setDescription("Resetar sistema")
 ].map(c => c.toJSON());
 
 // 🔥 READY
@@ -121,16 +94,12 @@ function format(ms) {
   return `${h}h ${m}m`;
 }
 
-// 🧮 SCORE (TEMPO + AÇÕES)
-function calcularScore(user) {
-  return (
-    user.tempo +
-    (user.atendimentos * 300000) +
-    (user.chamados * 180000)
-  );
+// 🧮 SCORE
+function score(u) {
+  return u.tempo + (u.atendimentos * 300000) + (u.chamados * 180000);
 }
 
-// 🏥 PAINEL
+// 🏥 PAINEL PREMIUM
 async function updatePanel() {
   if (!painel.canal || !painel.msgId) return;
 
@@ -144,42 +113,43 @@ async function updatePanel() {
 
   for (const [id, data] of db) {
     if (data.inicio) {
-      lista += `┆ 🟢 <@${id}> • ${format(Date.now() - data.inicio)}\n`;
+      lista += `👨‍⚕️ ┆ 🟢 <@${id}> • ${format(Date.now() - data.inicio)}\n`;
     }
   }
 
   const top = [...db.entries()]
-    .sort((a,b)=> calcularScore(b[1]) - calcularScore(a[1]))
+    .sort((a,b)=> score(b[1]) - score(a[1]))
     .slice(0,3)
     .map(([id,d],i)=>`
-┆ ${i+1}. <@${id}>
+🏅 ${i+1}. <@${id}>
 ┆ ⏱️ ${format(d.tempo)}
-┆ 🏥 ${d.atendimentos} atend.
+┆ 🏥 ${d.atendimentos} atendimentos
 ┆ 📞 ${d.chamados} chamados
 `)
     .join("\n");
 
   const embed = new EmbedBuilder()
-    .setColor("#0f172a")
+    .setColor("#2b2d31")
     .setDescription(`
-🏥 ═══════〔 **HOSPITAL BELLA** 〕═══════
+🏥 **━━━━━━━━━━〔 HOSPITAL BELLA 〕━━━━━━━━━━**
 
 👨‍⚕️ **EM SERVIÇO**
-${lista || "┆ ❌ Nenhum médico"}
+${lista || "❌ Nenhum médico em serviço"}
 
-━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🏆 **TOP 3 DO PLANTÃO**
-${top || "┆ ❌ Sem dados"}
+${top || "❌ Sem dados"}
 
-━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📊 **STATUS**
-┆ 🟢 Ativos: ${[...db.values()].filter(u=>u.inicio).length}
-┆ ⏱️ Atualizado: <t:${Math.floor(Date.now()/1000)}:R>
+🟢 Ativos: ${[...db.values()].filter(u=>u.inicio).length}
+⏱️ Atualizado: <t:${Math.floor(Date.now()/1000)}:R>
 
-💉 Sistema Premium
+💉 Sistema Premium RP
 `)
+    .setFooter({ text: "Hospital Bella • Sistema Inteligente" })
     .setTimestamp();
 
   const row = new ActionRowBuilder().addComponents(
@@ -198,13 +168,13 @@ function isStaff(member) {
   return member?.roles?.cache?.has(STAFF_ROLE);
 }
 
-// 🎯 INTERAÇÃO
+// 🎯 INTERAÇÕES
 client.on("interactionCreate", async (interaction) => {
 
   if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
 
   if (interaction.isChatInputCommand() && !isStaff(interaction.member)) {
-    return interaction.reply({ content: "❌ STAFF apenas", ephemeral: true });
+    return interaction.reply({ content: "❌ Apenas STAFF", ephemeral: true });
   }
 
   if (interaction.isChatInputCommand()) {
@@ -214,7 +184,7 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.commandName === "painelhp") {
       const canal = interaction.options.getChannel("canal");
 
-      const msg = await canal.send({ content: "🏥 Painel iniciado..." }).catch(()=>null);
+      const msg = await canal.send({ content: "🏥 Carregando painel..." }).catch(()=>null);
       if (!msg) return interaction.editReply("❌ Erro ao enviar painel");
 
       painel = { canal: canal.id, msgId: msg.id };
@@ -225,9 +195,9 @@ client.on("interactionCreate", async (interaction) => {
 
     if (interaction.commandName === "rankinghp") {
       const lista = [...db.entries()]
-        .sort((a,b)=> calcularScore(b[1]) - calcularScore(a[1]))
+        .sort((a,b)=> score(b[1]) - score(a[1]))
         .map(([id,d],i)=>`
-${i+1}. <@${id}>
+${i+1}. <@${id>}
 ⏱️ ${format(d.tempo)}
 🏥 ${d.atendimentos}
 📞 ${d.chamados}
@@ -241,27 +211,6 @@ ${i+1}. <@${id}>
       db.clear();
       updatePanel();
       return interaction.editReply("✅ Resetado");
-    }
-
-    if (interaction.commandName === "addhora") {
-      const u = interaction.options.getUser("usuario");
-      const h = interaction.options.getInteger("horas");
-      const m = interaction.options.getInteger("minutos") || 0;
-
-      getUser(u.id).tempo += (h * 60 + m) * 60000;
-
-      return interaction.editReply("✅ Adicionado");
-    }
-
-    if (interaction.commandName === "removerhora") {
-      const u = interaction.options.getUser("usuario");
-      const h = interaction.options.getInteger("horas");
-      const m = interaction.options.getInteger("minutos") || 0;
-
-      const user = getUser(u.id);
-      user.tempo = Math.max(0, user.tempo - (h * 60 + m) * 60000);
-
-      return interaction.editReply("❌ Removido");
     }
   }
 
@@ -300,7 +249,7 @@ ${i+1}. <@${id}>
 
     if (interaction.customId === "ranking") {
       const lista = [...db.entries()]
-        .sort((a,b)=> calcularScore(b[1]) - calcularScore(a[1]))
+        .sort((a,b)=> score(b[1]) - score(a[1]))
         .slice(0,10)
         .map(([id,d],i)=>`${i+1}. <@${id}> • ${format(d.tempo)}`)
         .join("\n");
@@ -310,4 +259,5 @@ ${i+1}. <@${id}>
   }
 });
 
+// 🚀 LOGIN
 client.login(TOKEN);
