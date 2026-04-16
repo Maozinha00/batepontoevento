@@ -21,28 +21,28 @@ app.listen(3000);
 const { TOKEN, CLIENT_ID, GUILD_ID } = process.env;
 
 if (!TOKEN || !CLIENT_ID || !GUILD_ID) {
-  console.log("❌ ENV faltando");
+  console.log("❌ Configure TOKEN / CLIENT_ID / GUILD_ID");
   process.exit(1);
 }
 
 // 🛡️ CONFIG
 const STAFF_ROLE = "1195468742595985444";
 
-// 🧠 SISTEMA
-let config = { painel: null, logs: null, msgId: null };
-const pontos = new Map();
+// 🧠 DATABASE
+const db = new Map();
+let painel = { canal: null, msgId: null };
 
-// 👤 CRIAR USER
+// 👤 USER
 function getUser(id) {
-  if (!pontos.has(id)) {
-    pontos.set(id, {
+  if (!db.has(id)) {
+    db.set(id, {
       inicio: null,
       tempo: 0,
       atendimentos: 0,
       chamados: 0
     });
   }
-  return pontos.get(id);
+  return db.get(id);
 }
 
 // ⏱ FORMAT
@@ -52,12 +52,12 @@ function format(ms) {
   return `${h}h ${m}m`;
 }
 
-// 🧮 SCORE (ranking real)
+// 🧮 SCORE
 function score(u) {
   return u.tempo + (u.atendimentos * 300000) + (u.chamados * 180000);
 }
 
-// 🚀 CLIENT
+// 🤖 CLIENT
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
@@ -68,9 +68,10 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
 const commands = [
   new SlashCommandBuilder()
     .setName("painelhp")
-    .setDescription("Criar painel")
+    .setDescription("Criar painel hospital")
     .addChannelOption(o =>
-      o.setName("canal").setDescription("Canal").setRequired(true)),
+      o.setName("canal").setDescription("Canal do painel").setRequired(true)
+    ),
 
   new SlashCommandBuilder()
     .setName("rankinghp")
@@ -81,9 +82,9 @@ const commands = [
     .setDescription("Resetar sistema")
 ].map(c => c.toJSON());
 
-// 🔥 READY
+// 🚀 READY
 client.once("ready", async () => {
-  console.log(`🔥 ${client.user.tag}`);
+  console.log(`🔥 ${client.user.tag} online`);
 
   await rest.put(
     Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
@@ -95,36 +96,33 @@ client.once("ready", async () => {
 
 // 🏥 PAINEL
 async function updatePanel() {
-  if (!config.painel || !config.msgId) return;
+  try {
+    if (!painel.canal || !painel.msgId) return;
 
-  const canal = await client.channels.fetch(config.painel).catch(()=>null);
-  if (!canal) return;
+    const canal = await client.channels.fetch(painel.canal);
+    const msg = await canal.messages.fetch(painel.msgId);
 
-  const msg = await canal.messages.fetch(config.msgId).catch(()=>null);
-  if (!msg) return;
+    let lista = "";
 
-  // 👨‍⚕️ EM SERVIÇO
-  let lista = "";
-  for (const [id, data] of pontos) {
-    if (data.inicio) {
-      lista += `┆ 🟢 <@${id}> • ${format(Date.now() - data.inicio)}\n`;
+    for (const [id, data] of db) {
+      if (data.inicio) {
+        lista += `┆ 🟢 <@${id}> • ${format(Date.now() - data.inicio)}\n`;
+      }
     }
-  }
 
-  // 🏆 TOP 3 RANKING
-  const top = [...pontos.entries()]
-    .sort((a,b)=> score(b[1]) - score(a[1]))
-    .slice(0,3)
-    .map(([id,d],i)=>`
+    const top = [...db.entries()]
+      .sort((a,b)=> score(b[1]) - score(a[1]))
+      .slice(0,3)
+      .map(([id,d],i)=>`
 🏅 ${i+1}. <@${id}>
 ┆ ⏱️ ${format(d.tempo)}
 ┆ 🏥 ${d.atendimentos}
 ┆ 📞 ${d.chamados}
 `).join("\n");
 
-  const embed = new EmbedBuilder()
-    .setColor("#0f172a")
-    .setDescription(`
+    const embed = new EmbedBuilder()
+      .setColor("#0f172a")
+      .setDescription(`
 ╔══════════════════════════════╗
         🏥 **HOSPITAL BELLA**
 ╚══════════════════════════════╝
@@ -140,25 +138,27 @@ ${top || "┆ ❌ Sem dados"}
 ╭━━━━━━━━━━━━━━━━━━━━╮
 ┃ 📊 **STATUS**
 ╰━━━━━━━━━━━━━━━━━━━━╯
-┆ 🟢 Ativos: ${[...pontos.values()].filter(u=>u.inicio).length}
+┆ 🟢 Ativos: ${[...db.values()].filter(u=>u.inicio).length}
 ┆ ⏱️ Atualizado: <t:${Math.floor(Date.now()/1000)}:R>
 
 💉 Sistema Premium
 `)
-    .setTimestamp();
+      .setTimestamp();
 
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("iniciar").setLabel("🟢 Iniciar").setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId("finalizar").setLabel("🔴 Finalizar").setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId("atendimento").setLabel("🏥 Atendimento").setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId("chamado").setLabel("📞 Chamado").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("ranking").setLabel("🏆 Ranking").setStyle(ButtonStyle.Success)
-  );
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("iniciar").setLabel("🟢 Iniciar").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId("finalizar").setLabel("🔴 Finalizar").setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId("atendimento").setLabel("🏥 Atendimento").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("chamado").setLabel("📞 Chamado").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("ranking").setLabel("🏆 Ranking").setStyle(ButtonStyle.Success)
+    );
 
-  msg.edit({ embeds: [embed], components: [row] });
+    await msg.edit({ embeds: [embed], components: [row] });
+
+  } catch {}
 }
 
-// 🔐 STAFF
+// 🔐 STAFF CHECK
 function isStaff(member) {
   return member.roles.cache.has(STAFF_ROLE);
 }
@@ -166,6 +166,7 @@ function isStaff(member) {
 // 🎯 INTERAÇÕES
 client.on("interactionCreate", async (interaction) => {
 
+  // 📌 COMANDOS
   if (interaction.isChatInputCommand()) {
 
     const member = await interaction.guild.members.fetch(interaction.user.id);
@@ -179,16 +180,14 @@ client.on("interactionCreate", async (interaction) => {
 
       const msg = await canal.send({ content: "🏥 Carregando painel..." });
 
-      config.painel = canal.id;
-      config.msgId = msg.id;
-
+      painel = { canal: canal.id, msgId: msg.id };
       updatePanel();
 
       return interaction.reply({ content: "✅ Painel criado!", ephemeral: true });
     }
 
     if (interaction.commandName === "rankinghp") {
-      const lista = [...pontos.entries()]
+      const lista = [...db.entries()]
         .sort((a,b)=> score(b[1]) - score(a[1]))
         .map(([id,d],i)=>`${i+1}. <@${id}> • ${format(d.tempo)}`)
         .join("\n");
@@ -197,23 +196,37 @@ client.on("interactionCreate", async (interaction) => {
     }
 
     if (interaction.commandName === "resethp") {
-      pontos.clear();
-      return interaction.reply({ content: "♻️ Resetado", ephemeral: true });
+      db.clear();
+      return interaction.reply({ content: "♻️ Sistema resetado!", ephemeral: true });
     }
   }
 
+  // 🔘 BOTÕES
   if (interaction.isButton()) {
+
+    const member = await interaction.guild.members.fetch(interaction.user.id);
+
+    if (!isStaff(member)) {
+      return interaction.reply({ content: "❌ Apenas STAFF", ephemeral: true });
+    }
 
     const user = getUser(interaction.user.id);
 
+    // INICIAR
     if (interaction.customId === "iniciar") {
+      if (user.inicio) {
+        return interaction.reply({ content: "⚠️ Já está em serviço", ephemeral: true });
+      }
+
       user.inicio = Date.now();
-      return interaction.reply({ content: "🟢 Iniciado", ephemeral: true });
+      return interaction.reply({ content: "🟢 Turno iniciado", ephemeral: true });
     }
 
+    // FINALIZAR
     if (interaction.customId === "finalizar") {
-      if (!user.inicio)
+      if (!user.inicio) {
         return interaction.reply({ content: "❌ Não iniciou", ephemeral: true });
+      }
 
       const tempo = Date.now() - user.inicio;
       user.tempo += tempo;
@@ -222,18 +235,21 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.reply({ content: `🔴 ${format(tempo)}`, ephemeral: true });
     }
 
+    // ATENDIMENTO
     if (interaction.customId === "atendimento") {
       user.atendimentos++;
-      return interaction.reply({ content: "🏥 Atendimento +1", ephemeral: true });
+      return interaction.reply({ content: "🏥 +1 atendimento", ephemeral: true });
     }
 
+    // CHAMADO
     if (interaction.customId === "chamado") {
       user.chamados++;
-      return interaction.reply({ content: "📞 Chamado +1", ephemeral: true });
+      return interaction.reply({ content: "📞 +1 chamado", ephemeral: true });
     }
 
+    // RANKING
     if (interaction.customId === "ranking") {
-      const lista = [...pontos.entries()]
+      const lista = [...db.entries()]
         .sort((a,b)=> score(b[1]) - score(a[1]))
         .slice(0,10)
         .map(([id,d],i)=>`${i+1}. <@${id}> • ${format(d.tempo)}`)
@@ -244,4 +260,5 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
+// 🚀 LOGIN
 client.login(TOKEN);
