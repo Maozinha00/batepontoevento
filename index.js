@@ -17,16 +17,16 @@ const app = express();
 app.get("/", (_, res) => res.send("Bot online 🔥"));
 app.listen(3000);
 
-// 🔐 TOKEN
+// 🔐 ENV
 const TOKEN = process.env.TOKEN;
-if (!TOKEN) throw new Error("TOKEN não definido");
-
-// 🏷️ IDS
+const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = "1477683902041690342";
 
+if (!TOKEN || !CLIENT_ID) throw new Error("TOKEN ou CLIENT_ID não definido");
+
+// 🏷️ CARGOS
 const CARGO_EM = "1492553421973356795";
 const CARGO_FORA = "1492553631642288160";
-
 const STAFF_ROLE = "1490431614055088128";
 
 // 👑 HIERARQUIA
@@ -37,25 +37,27 @@ const HIERARQUIA = [
   { cargo: "1477683902121509015", nome: "🩺 Coordenador(a)", peso: 1 }
 ];
 
-// 🧠 BANCO COMPLETO
-let config = { painel: null, msgId: null };
-
+// 🧠 BANCO
+let config = { canal: null, msgId: null };
 const db = new Map();
 
-// 🚀 CLIENT
+// 🤖 CLIENT
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
-// 📌 COMANDOS COMPLETOS
+// 📌 COMANDOS (100% CORRIGIDO)
 const commands = [
   new SlashCommandBuilder()
     .setName("painelhp")
     .setDescription("Criar painel hospital completo")
     .addChannelOption(o =>
-      o.setName("canal").setDescription("Canal do painel").setRequired(true)),
+      o.setName("canal")
+       .setDescription("Canal onde será enviado o painel")
+       .setRequired(true)
+    ),
 
   new SlashCommandBuilder()
     .setName("rankinghp")
@@ -63,21 +65,44 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("resetponto")
-    .setDescription("Resetar sistema completo"),
+    .setDescription("Resetar sistema"),
 
   new SlashCommandBuilder()
     .setName("addhora")
-    .setDescription("Adicionar horas manual")
-    .addUserOption(o => o.setName("usuario").setRequired(true))
-    .addIntegerOption(o => o.setName("horas").setRequired(true))
-    .addIntegerOption(o => o.setName("minutos")),
+    .setDescription("Adicionar horas")
+    .addUserOption(o =>
+      o.setName("usuario")
+       .setDescription("Usuário")
+       .setRequired(true)
+    )
+    .addIntegerOption(o =>
+      o.setName("horas")
+       .setDescription("Horas")
+       .setRequired(true)
+    )
+    .addIntegerOption(o =>
+      o.setName("minutos")
+       .setDescription("Minutos")
+    ),
 
   new SlashCommandBuilder()
     .setName("removerhora")
     .setDescription("Remover horas")
-    .addUserOption(o => o.setName("usuario").setRequired(true))
-    .addIntegerOption(o => o.setName("horas").setRequired(true))
-    .addIntegerOption(o => o.setName("minutos"))
+    .addUserOption(o =>
+      o.setName("usuario")
+       .setDescription("Usuário")
+       .setRequired(true)
+    )
+    .addIntegerOption(o =>
+      o.setName("horas")
+       .setDescription("Horas")
+       .setRequired(true)
+    )
+    .addIntegerOption(o =>
+      o.setName("minutos")
+       .setDescription("Minutos")
+    )
+
 ].map(c => c.toJSON());
 
 // 🔥 READY
@@ -85,7 +110,7 @@ client.once("ready", async () => {
   console.log(`🔥 Online: ${client.user.tag}`);
 
   await rest.put(
-    Routes.applicationGuildCommands(client.user.id, GUILD_ID),
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
     { body: commands }
   );
 
@@ -99,7 +124,7 @@ function formatar(ms) {
   return `${h}h ${m}m`;
 }
 
-// 🧠 GET USER
+// 🧠 USER
 function getUser(id) {
   if (!db.has(id)) {
     db.set(id, {
@@ -132,11 +157,11 @@ async function getResponsavel(guild) {
   return melhor;
 }
 
-// 🏥 ATUALIZAR PAINEL
+// 🏥 PAINEL
 async function atualizarPainel() {
-  if (!config.painel || !config.msgId) return;
+  if (!config.canal || !config.msgId) return;
 
-  const canal = await client.channels.fetch(config.painel).catch(() => null);
+  const canal = await client.channels.fetch(config.canal).catch(() => null);
   if (!canal) return;
 
   const msg = await canal.messages.fetch(config.msgId).catch(() => null);
@@ -156,35 +181,28 @@ async function atualizarPainel() {
 
   const embed = new EmbedBuilder()
     .setColor("#0f172a")
-    .setDescription(
-`🏥 **═══════〔 HOSPITAL BELLA 〕═══════**
+    .setDescription(`
+🏥 **═══════〔 HOSPITAL BELLA 〕═══════**
 
-👑 **RESPONSÁVEL DO PLANTÃO**
+👑 **RESPONSÁVEL**
 ${
 responsavel
-  ? `╭─ 🏅 ${responsavel.nome}\n╰─ 👤 <@${responsavel.id}>`
-  : `╭─ ❌ Nenhum responsável\n╰─ Aguardando equipe`
+  ? `╭─ ${responsavel.nome}\n╰─ <@${responsavel.id}>`
+  : "╰─ Nenhum"
 }
 
 ━━━━━━━━━━━━━━━━━━━━
 
 👨‍⚕️ **EM SERVIÇO**
-${lista || "┆ Nenhum médico em serviço"}
-
-━━━━━━━━━━━━━━━━━━━━
-
-📊 **EVENTO**
-🏥 Atendimentos  
-📞 Chamados  
+${lista || "Nenhum médico"}
 
 ━━━━━━━━━━━━━━━━━━━━
 
 📊 **STATUS**
-🟢 Ativos: ${[...db.values()].filter(u=>u.inicio).length}
-⏱ Atualizado: <t:${Math.floor(Date.now()/1000)}:R>
+🟢 Ativos: ${[...db.values()].filter(u => u.inicio).length}
 
-💉 Sistema Hospital + Evento`
-    )
+💉 Sistema completo
+`)
     .setTimestamp();
 
   const row = new ActionRowBuilder().addComponents(
@@ -203,7 +221,7 @@ function isStaff(member) {
   return member?.roles?.cache?.has(STAFF_ROLE);
 }
 
-// 🎯 INTERAÇÕES
+// 🎯 INTERAÇÃO
 client.on("interactionCreate", async (interaction) => {
 
   if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
@@ -220,11 +238,9 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.commandName === "painelhp") {
       const canal = interaction.options.getChannel("canal");
 
-      const msg = await canal.send({
-        content: "🏥 Sistema Hospital Completo",
-      });
+      const msg = await canal.send({ content: "Carregando painel..." });
 
-      config.painel = canal.id;
+      config.canal = canal.id;
       config.msgId = msg.id;
 
       atualizarPainel();
@@ -234,12 +250,12 @@ client.on("interactionCreate", async (interaction) => {
 
     if (interaction.commandName === "rankinghp") {
       const ranking = [...db.entries()]
-        .sort((a,b)=> (b[1].tempo + b[1].atendimentos*60000) - (a[1].tempo + a[1].atendimentos*60000))
-        .map(([id,data],i)=>`**${i+1}. <@${id}>**\n⏱ ${formatar(data.tempo)} | 🏥 ${data.atendimentos}`)
-        .join("\n\n");
+        .sort((a,b)=> b[1].tempo - a[1].tempo)
+        .map(([id,data],i)=>`**${i+1}. <@${id}>** • ${formatar(data.tempo)}`)
+        .join("\n");
 
       return interaction.reply({
-        embeds: [new EmbedBuilder().setTitle("🏆 Ranking Geral").setDescription(ranking || "Sem dados")],
+        embeds: [new EmbedBuilder().setTitle("🏆 Ranking").setDescription(ranking || "Sem dados")],
         ephemeral: true
       });
     }
@@ -258,7 +274,7 @@ client.on("interactionCreate", async (interaction) => {
       const user = getUser(u.id);
       user.tempo += (h * 60 + m) * 60000;
 
-      return interaction.reply({ content: "✅ Hora adicionada!", ephemeral: true });
+      return interaction.reply({ content: "✅ Adicionado!", ephemeral: true });
     }
 
     if (interaction.commandName === "removerhora") {
@@ -269,7 +285,7 @@ client.on("interactionCreate", async (interaction) => {
       const user = getUser(u.id);
       user.tempo = Math.max(0, user.tempo - (h * 60 + m) * 60000);
 
-      return interaction.reply({ content: "❌ Hora removida!", ephemeral: true });
+      return interaction.reply({ content: "❌ Removido!", ephemeral: true });
     }
   }
 
@@ -299,20 +315,20 @@ client.on("interactionCreate", async (interaction) => {
 
     if (interaction.customId === "atendimento") {
       user.atendimentos++;
-      return interaction.reply({ content: "🏥 Atendimento registrado!", ephemeral: true });
+      return interaction.reply({ content: "🏥 Atendimento!", ephemeral: true });
     }
 
     if (interaction.customId === "chamado") {
       user.chamados++;
-      return interaction.reply({ content: "📞 Chamado registrado!", ephemeral: true });
+      return interaction.reply({ content: "📞 Chamado!", ephemeral: true });
     }
 
     if (interaction.customId === "ranking") {
       const ranking = [...db.entries()]
-        .sort((a,b)=> (b[1].tempo + b[1].atendimentos*60000) - (a[1].tempo + a[1].atendimentos*60000))
+        .sort((a,b)=> b[1].tempo - a[1].tempo)
         .slice(0,10)
-        .map(([id,data],i)=>`**${i+1}. <@${id}>**\n⏱ ${formatar(data.tempo)} | 🏥 ${data.atendimentos}`)
-        .join("\n\n");
+        .map(([id,data],i)=>`**${i+1}. <@${id}>** • ${formatar(data.tempo)}`)
+        .join("\n");
 
       return interaction.reply({ content: ranking || "Sem dados", ephemeral: true });
     }
