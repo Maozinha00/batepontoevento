@@ -1,0 +1,27 @@
+{
+  "name": "hospital-bella-evento",
+  "version": "1.0.0",
+  "description": "Bot de gerenciamento hospitalar para Discord",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "hospital",
+    "rp",
+    "bella"
+  ],
+  "author": "Hospital Bella evento",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
