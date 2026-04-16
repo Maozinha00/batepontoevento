@@ -33,7 +33,7 @@ const STAFF_ROLE = "1195468742595985444";
 // 🧠 BANCO
 const pontos = new Map();
 const ranking = new Map();
-const dados = new Map(); // atendimentos + chamados
+const dados = new Map();
 
 let painel = { canal: null, msgId: null };
 
@@ -44,7 +44,7 @@ const client = new Client({
 
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
-// 📌 COMANDOS (SEM ERRO)
+// 📌 COMANDOS
 const commands = [
   new SlashCommandBuilder()
     .setName("painelhp")
@@ -61,35 +61,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("resetponto")
-    .setDescription("Resetar todos os dados"),
-
-  new SlashCommandBuilder()
-    .setName("addhora")
-    .setDescription("Adicionar horas a um usuário")
-    .addUserOption(o =>
-      o.setName("usuario")
-        .setDescription("Usuário alvo")
-        .setRequired(true)
-    )
-    .addIntegerOption(o =>
-      o.setName("horas")
-        .setDescription("Horas")
-        .setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("removerhora")
-    .setDescription("Remover horas de um usuário")
-    .addUserOption(o =>
-      o.setName("usuario")
-        .setDescription("Usuário alvo")
-        .setRequired(true)
-    )
-    .addIntegerOption(o =>
-      o.setName("horas")
-        .setDescription("Horas")
-        .setRequired(true)
-    )
+    .setDescription("Resetar todos os dados")
 ].map(c => c.toJSON());
 
 // 🔥 READY
@@ -111,7 +83,7 @@ function formatar(ms) {
   return `${h}h ${m}m`;
 }
 
-// 🧠 GET USER
+// 🧠 USER DATA
 function getUser(id) {
   if (!dados.has(id)) {
     dados.set(id, { atendimentos: 0, chamados: 0 });
@@ -119,67 +91,99 @@ function getUser(id) {
   return dados.get(id);
 }
 
-// 🏥 ATUALIZAR PAINEL
+// 🧮 SCORE COMPETITIVO
+function getScore(id) {
+  const tempo = ranking.get(id) || 0;
+  const user = getUser(id);
+
+  return tempo + (user.atendimentos * 300000) + (user.chamados * 180000);
+}
+
+// 👑 RESPONSÁVEL
+function getBoss() {
+  let boss = null;
+  let best = 0;
+
+  for (const [id] of pontos) {
+    const score = getScore(id);
+    if (score > best) {
+      best = score;
+      boss = id;
+    }
+  }
+
+  return boss ? `<@${boss}>` : "Nenhum";
+}
+
+// 🏥 PAINEL
 async function updatePanel() {
   if (!painel.canal) return;
 
-  const canal = await client.channels.fetch(painel.canal).catch(()=>null);
-  if (!canal) return;
+  const channel = await client.channels.fetch(painel.canal).catch(() => null);
+  if (!channel) return;
 
-  const msg = await canal.messages.fetch(painel.msgId).catch(()=>null);
+  const msg = await channel.messages.fetch(painel.msgId).catch(() => null);
   if (!msg) return;
 
   let lista = "";
+
   for (const [id, data] of pontos) {
     lista += `┆ 🟢 <@${id}> • ${formatar(Date.now() - data.inicio)}\n`;
   }
 
-  const top = [...ranking.entries()]
-    .sort((a,b)=> b[1] - a[1])
-    .slice(0,3)
-    .map(([id,t],i)=>`
-🏅 ${i+1}. <@${id}>
-┆ ⏱️ ${formatar(t)}
-┆ 🏥 ${getUser(id).atendimentos}
-┆ 📞 ${getUser(id).chamados}
-`)
+  const top = [...pontos.keys()]
+    .map(id => ({ id, score: getScore(id) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3)
+    .map((u, i) => {
+      const d = getUser(u.id);
+      return `
+🏅 ${i + 1}. <@${u.id}>
+┆ 🧠 Score: ${u.score}
+┆ ⏱️ Tempo: ${formatar(ranking.get(u.id) || 0)}
+┆ 🏥 Atend: ${d.atendimentos}
+┆ 📞 Cham: ${d.chamados}
+`;
+    })
     .join("\n");
 
   const embed = new EmbedBuilder()
     .setColor("#0f172a")
     .setDescription(`╔══════════════════════════════╗
-        🏥 **HOSPITAL BELLA**
+🏥 **HOSPITAL BELLA**
 ╚══════════════════════════════╝
+
+👑 **RESPONSÁVEL DO PLANTÃO**
+${getBoss()}
 
 👨‍⚕️ **EM SERVIÇO**
 ${lista || "┆ ❌ Nenhum médico"}
 
-━━━━━━━━━━━━━━━━━━━━
-
-🏆 **TOP 3 DO PLANTÃO**
+🏆 **TOP 3 COMPETITIVO**
 ${top || "┆ ❌ Sem dados"}
-
-━━━━━━━━━━━━━━━━━━━━
 
 📊 **STATUS**
 ┆ 🟢 Ativos: ${pontos.size}
-┆ ⏱️ Atualizado: <t:${Math.floor(Date.now()/1000)}:R>
+┆ ⏱️ Atualizado: <t:${Math.floor(Date.now() / 1000)}:R>
 
 💉 Sistema Premium RP`)
     .setTimestamp();
 
+  const totalAtend = [...dados.values()].reduce((a, b) => a + b.atendimentos, 0);
+  const totalCham = [...dados.values()].reduce((a, b) => a + b.chamados, 0);
+
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("iniciar").setLabel("🟢 INICIAR").setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId("finalizar").setLabel("🔴 FINALIZAR").setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId("atendimento").setLabel("🏥 ATENDIMENTO").setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId("chamado").setLabel("📞 CHAMADO").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("ranking").setLabel("🏆 RANKING").setStyle(ButtonStyle.Success)
+    new ButtonBuilder().setCustomId("iniciar").setLabel("🟢 Iniciar").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId("finalizar").setLabel("🔴 Finalizar").setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId("atendimento").setLabel(`🏥 Atendimento (${totalAtend})`).setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId("chamado").setLabel(`📞 Chamado (${totalCham})`).setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("ranking").setLabel("🏆 Ranking").setStyle(ButtonStyle.Success)
   );
 
-  msg.edit({ embeds: [embed], components: [row] });
+  await msg.edit({ embeds: [embed], components: [row] });
 }
 
-// 🔐 STAFF
+// 🔐 STAFF CHECK
 function isStaff(member) {
   return member?.roles?.cache?.has(STAFF_ROLE);
 }
@@ -207,8 +211,8 @@ client.on("interactionCreate", async (interaction) => {
 
     if (interaction.commandName === "rankinghp") {
       const lista = [...ranking.entries()]
-        .sort((a,b)=> b[1] - a[1])
-        .map(([id,t],i)=>`${i+1}. <@${id}> • ${formatar(t)}`)
+        .sort((a, b) => b[1] - a[1])
+        .map(([id, t], i) => `${i + 1}. <@${id}> • ${formatar(t)}`)
         .join("\n");
 
       return interaction.reply({ content: lista || "Sem dados", ephemeral: true });
@@ -218,12 +222,13 @@ client.on("interactionCreate", async (interaction) => {
       pontos.clear();
       ranking.clear();
       dados.clear();
+
       updatePanel();
+
       return interaction.reply({ content: "✅ Resetado", ephemeral: true });
     }
   }
 
-  // BOTÕES
   if (interaction.isButton()) {
 
     if (!isStaff(interaction.member)) {
@@ -260,8 +265,8 @@ client.on("interactionCreate", async (interaction) => {
 
     if (interaction.customId === "ranking") {
       const lista = [...ranking.entries()]
-        .sort((a,b)=> b[1] - a[1])
-        .map(([id,t],i)=>`${i+1}. <@${id}> • ${formatar(t)}`)
+        .sort((a, b) => b[1] - a[1])
+        .map(([id, t], i) => `${i + 1}. <@${id}> • ${formatar(t)}`)
         .join("\n");
 
       return interaction.reply({ content: lista || "Sem dados", ephemeral: true });
