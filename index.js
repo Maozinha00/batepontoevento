@@ -67,36 +67,26 @@ const commands = [
     .setName("addhora")
     .setDescription("Adicionar horas")
     .addUserOption(o =>
-      o.setName("usuario")
-        .setDescription("Usuário")
-        .setRequired(true)
+      o.setName("usuario").setDescription("Usuário").setRequired(true)
     )
     .addIntegerOption(o =>
-      o.setName("horas")
-        .setDescription("Horas")
-        .setRequired(true)
+      o.setName("horas").setDescription("Horas").setRequired(true)
     )
     .addIntegerOption(o =>
-      o.setName("minutos")
-        .setDescription("Minutos")
+      o.setName("minutos").setDescription("Minutos")
     ),
 
   new SlashCommandBuilder()
     .setName("removerhora")
     .setDescription("Remover horas")
     .addUserOption(o =>
-      o.setName("usuario")
-        .setDescription("Usuário")
-        .setRequired(true)
+      o.setName("usuario").setDescription("Usuário").setRequired(true)
     )
     .addIntegerOption(o =>
-      o.setName("horas")
-        .setDescription("Horas")
-        .setRequired(true)
+      o.setName("horas").setDescription("Horas").setRequired(true)
     )
     .addIntegerOption(o =>
-      o.setName("minutos")
-        .setDescription("Minutos")
+      o.setName("minutos").setDescription("Minutos")
     )
 
 ].map(c => c.toJSON());
@@ -133,7 +123,7 @@ function format(ms) {
   return `${h}h ${m}m`;
 }
 
-// 🏥 PAINEL
+// 🏥 PAINEL PREMIUM
 async function updatePanel() {
   if (!painel.canal || !painel.msgId) return;
 
@@ -147,32 +137,56 @@ async function updatePanel() {
 
   for (const [id, data] of db) {
     if (data.inicio) {
-      lista += `🟢 <@${id}> • ${format(Date.now() - data.inicio)}\n`;
+      lista += `┆ 🟢 <@${id}> • ${format(Date.now() - data.inicio)}\n`;
     }
   }
+
+  const top = [...db.entries()]
+    .sort((a,b)=> b[1].tempo - a[1].tempo)
+    .slice(0,3)
+    .map(([id,d],i)=>`┆ ${i+1}. <@${id}> • ${format(d.tempo)}`)
+    .join("\n");
 
   const embed = new EmbedBuilder()
     .setColor("#0f172a")
     .setDescription(`
-🏥 **═══════〔 HOSPITAL BELLA 〕═══════**
+🏥 ═══════〔 **HOSPITAL BELLA** 〕═══════
 
-👨‍⚕️ EM SERVIÇO
-${lista || "Nenhum médico"}
+╭━━━━━━━━━━━━━━━━━━━━╮
+┃ 🏥 **Sistema Hospitalar Ativo**
+╰━━━━━━━━━━━━━━━━━━━━╯
+
+👑 **RESPONSÁVEL DO PLANTÃO**
+┆ ${[...db.values()].filter(u=>u.inicio).length > 0 ? "Equipe em serviço" : "Nenhum responsável disponível"}
 
 ━━━━━━━━━━━━━━━━━━━━
 
-📊 Ativos: ${[...db.values()].filter(u=>u.inicio).length}
+👨‍⚕️ **MÉDICOS EM SERVIÇO**
+${lista || "┆ ❌ Nenhum médico em serviço"}
 
-💉 Sistema ativo
+━━━━━━━━━━━━━━━━━━━━
+
+🏆 **TOP 3 DO PLANTÃO**
+${top || "┆ ❌ Sem dados"}
+
+━━━━━━━━━━━━━━━━━━━━
+
+📊 **STATUS DO SISTEMA**
+┆ 🟢 Ativos: ${[...db.values()].filter(u=>u.inicio).length}
+┆ ⏱️ Atualizado: <t:${Math.floor(Date.now()/1000)}:R>
+
+━━━━━━━━━━━━━━━━━━━━
+
+💉 **Hospital Bella • Sistema Premium RP**
 `)
     .setTimestamp();
 
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("iniciar").setLabel("🟢 Iniciar").setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId("finalizar").setLabel("🔴 Finalizar").setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId("atendimento").setLabel("🏥 Atendimento").setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId("chamado").setLabel("📞 Chamado").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("ranking").setLabel("🏆 Ranking").setStyle(ButtonStyle.Success)
+    new ButtonBuilder().setCustomId("iniciar").setLabel("🟢 INICIAR TURNO").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId("finalizar").setLabel("🔴 FINALIZAR").setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId("atendimento").setLabel("🏥 ATENDIMENTO").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId("chamado").setLabel("📞 CHAMADO").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("ranking").setLabel("🏆 RANKING").setStyle(ButtonStyle.Success)
   );
 
   msg.edit({ embeds: [embed], components: [row] }).catch(()=>{});
@@ -183,12 +197,11 @@ function isStaff(member) {
   return member?.roles?.cache?.has(STAFF_ROLE);
 }
 
-// 🎯 INTERAÇÃO
+// 🎯 INTERAÇÕES
 client.on("interactionCreate", async (interaction) => {
 
   if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
 
-  // 🔒 COMANDOS
   if (interaction.isChatInputCommand() && !isStaff(interaction.member)) {
     return interaction.reply({ content: "❌ STAFF apenas", ephemeral: true });
   }
@@ -204,13 +217,9 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.editReply("❌ Canal inválido.");
       }
 
-      const msg = await canal.send({
-        content: "🏥 Painel iniciado..."
-      }).catch(() => null);
+      const msg = await canal.send({ content: "🏥 Painel iniciado..." }).catch(()=>null);
 
-      if (!msg) {
-        return interaction.editReply("❌ Não consegui enviar no canal.");
-      }
+      if (!msg) return interaction.editReply("❌ Não consegui enviar no canal.");
 
       painel = { canal: canal.id, msgId: msg.id };
 
@@ -239,8 +248,7 @@ client.on("interactionCreate", async (interaction) => {
       const h = interaction.options.getInteger("horas");
       const m = interaction.options.getInteger("minutos") || 0;
 
-      const user = getUser(u.id);
-      user.tempo += (h * 60 + m) * 60000;
+      getUser(u.id).tempo += (h * 60 + m) * 60000;
 
       return interaction.editReply("✅ Adicionado");
     }
@@ -257,14 +265,10 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 
-  // 🔘 BOTÕES
   if (interaction.isButton()) {
 
     if (!isStaff(interaction.member)) {
-      return interaction.reply({
-        content: "❌ Apenas STAFF pode usar.",
-        ephemeral: true
-      });
+      return interaction.reply({ content: "❌ Apenas STAFF pode usar.", ephemeral: true });
     }
 
     const user = getUser(interaction.user.id);
@@ -286,12 +290,12 @@ client.on("interactionCreate", async (interaction) => {
 
     if (interaction.customId === "atendimento") {
       user.atendimentos++;
-      return interaction.reply({ content: "🏥 Atendimento", ephemeral: true });
+      return interaction.reply({ content: "🏥 Atendimento registrado", ephemeral: true });
     }
 
     if (interaction.customId === "chamado") {
       user.chamados++;
-      return interaction.reply({ content: "📞 Chamado", ephemeral: true });
+      return interaction.reply({ content: "📞 Chamado registrado", ephemeral: true });
     }
 
     if (interaction.customId === "ranking") {
