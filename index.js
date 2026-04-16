@@ -50,7 +50,9 @@ const commands = [
     .setName("painelhp")
     .setDescription("Criar painel hospital")
     .addChannelOption(o =>
-      o.setName("canal").setDescription("Canal do painel").setRequired(true)
+      o.setName("canal")
+        .setDescription("Canal do painel")
+        .setRequired(true)
     ),
 
   new SlashCommandBuilder()
@@ -99,7 +101,7 @@ function score(u) {
   return u.tempo + (u.atendimentos * 300000) + (u.chamados * 180000);
 }
 
-// 🏥 PAINEL PREMIUM
+// 🏥 PAINEL
 async function updatePanel() {
   if (!painel.canal || !painel.msgId) return;
 
@@ -168,7 +170,7 @@ function isStaff(member) {
   return member?.roles?.cache?.has(STAFF_ROLE);
 }
 
-// 🎯 INTERAÇÕES
+// 🎯 INTERAÇÃO
 client.on("interactionCreate", async (interaction) => {
 
   if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
@@ -184,6 +186,10 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.commandName === "painelhp") {
       const canal = interaction.options.getChannel("canal");
 
+      if (!canal || !canal.isTextBased()) {
+        return interaction.editReply("❌ Canal inválido");
+      }
+
       const msg = await canal.send({ content: "🏥 Carregando painel..." }).catch(()=>null);
       if (!msg) return interaction.editReply("❌ Erro ao enviar painel");
 
@@ -197,7 +203,7 @@ client.on("interactionCreate", async (interaction) => {
       const lista = [...db.entries()]
         .sort((a,b)=> score(b[1]) - score(a[1]))
         .map(([id,d],i)=>`
-${i+1}. <@${id>}
+${i+1}. <@${id}>
 ⏱️ ${format(d.tempo)}
 🏥 ${d.atendimentos}
 📞 ${d.chamados}
